@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import anyio
 import asyncer
@@ -17,8 +17,15 @@ class ErrorMode(str, Enum):
     IGNORE = 'ignore'
 
 
+class ProgressBarMode(str, Enum):
+    AUTO = 'auto'
+    ALWAYS = 'always'
+    NEVER = 'never'
+
+
 class LMClient:
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
+    PROGRESS_BAR_THRESHOLD: ClassVar[int] = 30
 
     def __init__(
         self,
@@ -27,16 +34,18 @@ class LMClient:
         async_capacity: int = 3,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: str | None = None,
+        progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
     ):
         self.completion_model = completion_model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
+        self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
         self.cache = diskcache.Cache(cache_dir) if cache_dir is not None else None
 
     def run(self, prompts: list[str], **kwargs) -> list[str]:
-        progress_bar = tqdm.tqdm(desc=f'Sync {self.completion_model.__class__.__name__}', total=len(prompts))
+        progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         completions: list[str] = []
         for prompt in prompts:
             completion = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
@@ -48,7 +57,7 @@ class LMClient:
     async def async_run(self, prompts: list[str], **kwargs) -> list[str]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
-        progress_bar = tqdm.tqdm(desc=f'Async {self.completion_model.__class__.__name__}', total=len(prompts))
+        progress_bar = self._get_progress_bar(num_tasks=len(prompts))
 
         soon_values: list[asyncer.SoonValue[str]] = []
         async with asyncer.create_task_group() as task_group:
@@ -148,3 +157,12 @@ class LMClient:
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
         items = [prompt, self.completion_model.identifier] + items
         return '---'.join(items)
+
+    def _get_progress_bar(self, num_tasks: int) -> tqdm.tqdm:
+        use_progress_bar = (self.progress_bar_mode is ProgressBarMode.ALWAYS) or (
+            self.progress_bar_mode is ProgressBarMode.AUTO and num_tasks > self.PROGRESS_BAR_THRESHOLD
+        )
+        progress_bar = tqdm.tqdm(
+            desc=f'{self.completion_model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar
+        )
+        return progress_bar
