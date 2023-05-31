@@ -30,7 +30,7 @@ prompts = [
     'i want to know your name',
     'what is your name?',
 ]
-values = client.async_run(prompts=prompts)
+values = client.async_run(prompts=prompts, temperature=0)
 print(values)
 ```
 
