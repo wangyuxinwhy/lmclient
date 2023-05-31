@@ -1,16 +1,14 @@
 # lmclient
 
-[中文](./README-zh.md)
-
-LM Async Client, OpenAI, Azure ...
+支持异步请求 OpenAI 接口的客户端
 
 ## Features
 
-1. support asynchronous request openai interface
-2. support progress bar
-3. support limit max requests per minute
-4. support limit async capacity
-5. support disk cache
+1. 支持异步请求 openai 接口
+2. 支持进度条
+3. 支持限制每分钟最大请求次数
+4. 支持限制异步容量 （类似于线程池的大小）
+5. 支持磁盘缓存
 
 ## Install
 
