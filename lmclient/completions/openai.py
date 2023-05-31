@@ -31,3 +31,7 @@ class OpenAICompletion(CompletionModel):
         response = await openai.ChatCompletion.acreate(model=self.model, messages=messages, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore
         return completion
+
+    @property
+    def identifier(self) -> str:
+        return f'{self.__class__.__name__}({self.model})'

@@ -4,6 +4,9 @@ from lmclient.client import LMClient
 
 
 class TestCompletion:
+    def __init__(self) -> None:
+        self.identifier = 'TestCompletion'
+
     def complete(self, prompt: str, **kwargs) -> str:
         return f'Completed: {prompt}'
 
@@ -37,3 +40,20 @@ def test_async_completion():
     assert completions[0] == 'Completed: Hello, my name is'
     assert len(completions) == len(prompts)
     assert elapsed_time > 4
+
+
+def test_async_completion_with_cache(tmp_path):
+    completion_model = TestCompletion()
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=str(tmp_path))
+    LMClient.NUM_SECONDS_PER_MINUTE = 2
+
+    start_time = time.perf_counter()
+    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball'] * 4
+    completions = client.async_run(prompts)
+    elapsed_time = time.perf_counter() - start_time
+
+    assert isinstance(completions[0], str)
+    assert completions[3] == 'Completed: Hello, my name is'
+    assert len(completions) == len(prompts)
+    assert elapsed_time < 2
+    assert len(list(client.cache)) == 3  # type: ignore

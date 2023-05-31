@@ -6,6 +6,7 @@ from typing import ClassVar
 
 import anyio
 import asyncer
+import diskcache
 import tqdm
 
 from lmclient.protocols import CompletionModel
@@ -25,20 +26,23 @@ class LMClient:
         max_requests_per_minute: int = 20,
         async_capacity: int = 3,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
+        cache_dir: str | None = None,
     ):
         self.completion_model = completion_model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
         self._task_created_time_list: list[int] = []
+        self.cache = diskcache.Cache(cache_dir) if cache_dir is not None else None
 
     def run(self, prompts: list[str], **kwargs) -> list[str]:
         progress_bar = tqdm.tqdm(desc=f'Sync {self.completion_model.__class__.__name__}', total=len(prompts))
-        values: list[str] = []
+        completions: list[str] = []
         for prompt in prompts:
-            values.append(self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs))
+            completion = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
+            completions.append(completion)
         progress_bar.close()
-        return values
+        return completions
 
     @asyncer.runnify
     async def async_run(self, prompts: list[str], **kwargs) -> list[str]:
@@ -50,15 +54,14 @@ class LMClient:
         async with asyncer.create_task_group() as task_group:
             soon_func = task_group.soonify(self._async_run_single_task)
             for prompt in prompts:
-                soon_values.append(
-                    soon_func(
-                        prompt=prompt,
-                        limiter=limiter,
-                        task_created_lock=task_created_lock,
-                        progress_bar=progress_bar,
-                        **kwargs,
-                    )
+                soon_value = soon_func(
+                    prompt=prompt,
+                    limiter=limiter,
+                    task_created_lock=task_created_lock,
+                    progress_bar=progress_bar,
+                    **kwargs,
                 )
+                soon_values.append(soon_value)
 
         progress_bar.close()
         values = [soon_value.value for soon_value in soon_values]
@@ -70,9 +73,15 @@ class LMClient:
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm,
-        **openai_kwargs,
+        **kwargs,
     ) -> str:
         async with limiter:
+            task_key = self._gen_task_key(prompt=prompt, **kwargs)
+            if self.cache is not None and task_key in self.cache:
+                completion = self.cache[task_key]  # type: ignore
+                progress_bar.update(1)
+                return completion
+
             async with task_created_lock:
                 sleep_time = self._calculate_sleep_time()
                 if sleep_time > 0:
@@ -80,7 +89,9 @@ class LMClient:
                 self._task_created_time_list.append(int(time.time()))
 
             try:
-                completion = await self.completion_model.async_complete(prompt=prompt, **openai_kwargs)
+                completion = await self.completion_model.async_complete(prompt=prompt, **kwargs)
+                if self.cache is not None:
+                    self.cache[task_key] = completion
             except BaseException as e:
                 if self.error_mode is ErrorMode.RAISE:
                     raise
@@ -93,6 +104,12 @@ class LMClient:
             return completion
 
     def _run_single_task(self, prompt: str, progress_bar: tqdm.tqdm, **kwargs) -> str:
+        task_key = self._gen_task_key(prompt=prompt, **kwargs)
+        if self.cache is not None and task_key in self.cache:
+            completion = self.cache[task_key]  # type: ignore
+            progress_bar.update(1)
+            return completion
+
         sleep_time = self._calculate_sleep_time()
         if sleep_time > 0:
             time.sleep(sleep_time)
@@ -100,6 +117,8 @@ class LMClient:
 
         try:
             completion = self.completion_model.complete(prompt=prompt, **kwargs)
+            if self.cache is not None:
+                self.cache[task_key] = completion
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:
                 raise
@@ -124,3 +143,8 @@ class LMClient:
             return 0
         else:
             return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
+
+    def _gen_task_key(self, prompt: str, **kwargs) -> str:
+        items = sorted([f'{key}={value}' for key, value in kwargs.items()])
+        items = [prompt, self.completion_model.identifier] + items
+        return '---'.join(items)
