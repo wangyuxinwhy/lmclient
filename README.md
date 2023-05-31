@@ -2,6 +2,13 @@
 
 LM Async Client, OpenAI, Azure ...
 
+## Features
+
+1. support asynchronous request openai interface
+2. support progress bar
+3. support limit max requests per minute
+4. support limit async capacity
+5. support disk cache
 
 ## Install
 
