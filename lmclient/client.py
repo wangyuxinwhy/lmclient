@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 import anyio
 import asyncer
@@ -25,7 +25,7 @@ class ProgressBarMode(str, Enum):
 
 class LMClient:
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
-    PROGRESS_BAR_THRESHOLD: ClassVar[int] = 30
+    PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
     def __init__(
         self,
