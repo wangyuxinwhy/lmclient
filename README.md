@@ -23,7 +23,7 @@ pip install lmclient-core
 ## 使用方法
 
 ```python
-from lmclient import LMClient, AzureCompletion, OpenAICompletion
+from lmclient import LMClient, OpenAICompletion
 
 openai_completion = OpenAICompletion(model='gpt-3.5-turbo')
 # 控制每分钟最大请求次数为 20， 异步容量为 5
@@ -46,7 +46,7 @@ print(values)
 您需要进入 `scripts` 目录下，并安装 `typer`, 执行 `pip install "typer[all]"` 即可。
 
 ### 查看帮助
-通过 `python scripts/translate.py --help` 可以查看帮助
+通过 `python translate.py --help` 可以查看帮助
 
 ![](https://yuxin-wang.oss-cn-beijing.aliyuncs.com/uPic/AxbBw5.png)
 
@@ -74,7 +74,7 @@ python translate.py data/input.jsonl data/output.jsonl
 
 ### 核心代码
 
-翻译脚本可以在 `scripts/translate.py` 中找到，核心代码如下
+翻译脚本可以在 [translate.py](./scripts/translate.py) 中找到，核心代码如下
 
 ```python
 # 核心代码
