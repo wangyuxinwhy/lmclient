@@ -23,15 +23,15 @@ pip install lmclient-core
 ## 使用方法
 
 ```python
-from lmclient import LMClient, OpenAICompletion
+from lmclient import LMClient, OpenAIChat
 
-openai_completion = OpenAICompletion(model='gpt-3.5-turbo')
+model = OpenAIChat('gpt-3.5-turbo')
 # 控制每分钟最大请求次数为 20， 异步容量为 5
-client = LMClient(openai_completion, async_capacity=5, max_requests_per_minute=20)
+client = LMClient(model, async_capacity=5, max_requests_per_minute=20)
 prompts = [
     'Hello, my name is',
     'can you please tell me your name?',
-    'i want to know your name',
+    [{'role': 'system', 'content': 'your are lmclient demo assistant'}, {'role': 'user', 'content': 'hello, who are you?'}],
     'what is your name?',
 ]
 values = client.async_run(prompts=prompts, temperature=0)
@@ -79,7 +79,7 @@ python translate.py data/input.jsonl data/output.jsonl
 ```python
 # 核心代码
 client = LMClient(
-    completion_model,
+    model,
     max_requests_per_minute=max_requests_per_minute,
     async_capacity=async_capacity,
     error_mode=error_mode,
@@ -106,6 +106,7 @@ TODO: 待补充 self-instruct 脚本
 # use cache
 # set error_mode to ignore (ignore or raise)
 
-from lmclient import LMClient, OpenAICompletion
-openai_completion = OpenAICompletion(model='gpt-3.5-turbo', max_requests_per_minute=20, async_capacity=5, cache_dir='openai_cache', error_mode='ignore')
+from lmclient import LMClient, OpenAIChat
+model = OpenAIChat('gpt-3.5-turbo')
+client = LMClient(model, max_requests_per_minute=20, async_capacity=5, cache_dir='openai_cache', error_mode='ignore')
 ```

@@ -1,3 +1,6 @@
 from lmclient.client import LMClient as LMClient
-from lmclient.completions import AzureCompletion as AzureCompletion
-from lmclient.completions import OpenAICompletion as OpenAICompletion
+from lmclient.models import AzureChat as AzureChat
+from lmclient.models import OpenAIChat as OpenAIChat
+
+AzureCompletion = AzureChat
+OpenAICompletion = OpenAIChat

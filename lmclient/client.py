@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from enum import Enum
-from typing import ClassVar
+from typing import ClassVar, Sequence
 
 import anyio
 import asyncer
 import diskcache
 import tqdm
 
-from lmclient.protocols import CompletionModel
+from lmclient.types import ChatModel, Messages
 
 
 class ErrorMode(str, Enum):
@@ -29,14 +30,15 @@ class LMClient:
 
     def __init__(
         self,
-        completion_model: CompletionModel,
+        model: ChatModel,
         max_requests_per_minute: int = 20,
         async_capacity: int = 3,
+        timeout: int | None = 20,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: str | None = None,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
     ):
-        self.completion_model = completion_model
+        self.completion_model = model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
@@ -44,7 +46,14 @@ class LMClient:
         self._task_created_time_list: list[int] = []
         self.cache = diskcache.Cache(cache_dir) if cache_dir is not None else None
 
-    def run(self, prompts: list[str], **kwargs) -> list[str]:
+        if timeout is None:
+            default_kwargs = {}
+        else:
+            default_kwargs = {'request_timeout': timeout}
+        self.default_kwargs = default_kwargs
+
+    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
+        kwargs = {**self.default_kwargs, **kwargs}
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         completions: list[str] = []
         for prompt in prompts:
@@ -54,7 +63,8 @@ class LMClient:
         return completions
 
     @asyncer.runnify
-    async def async_run(self, prompts: list[str], **kwargs) -> list[str]:
+    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
+        kwargs = {**self.default_kwargs, **kwargs}
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -78,7 +88,7 @@ class LMClient:
 
     async def _async_run_single_task(
         self,
-        prompt: str,
+        prompt: str | Messages,
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm,
@@ -112,7 +122,7 @@ class LMClient:
             progress_bar.update(1)
             return completion
 
-    def _run_single_task(self, prompt: str, progress_bar: tqdm.tqdm, **kwargs) -> str:
+    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> str:
         task_key = self._gen_task_key(prompt=prompt, **kwargs)
         if self.cache is not None and task_key in self.cache:
             completion = self.cache[task_key]  # type: ignore
@@ -153,10 +163,17 @@ class LMClient:
         else:
             return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
 
-    def _gen_task_key(self, prompt: str, **kwargs) -> str:
+    def _gen_task_key(self, prompt: str | Messages, **kwargs) -> str:
+        if not isinstance(prompt, str):
+            prompt = '---'.join([f'{message["role"]}={message["content"]}' for message in prompt])
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
         items = [prompt, self.completion_model.identifier] + items
-        return '---'.join(items)
+        task_string = '---'.join(items)
+        return self.md5_hash(task_string)
+
+    @staticmethod
+    def md5_hash(string: str):
+        return hashlib.md5(string.encode()).hexdigest()
 
     def _get_progress_bar(self, num_tasks: int) -> tqdm.tqdm:
         use_progress_bar = (self.progress_bar_mode is ProgressBarMode.ALWAYS) or (

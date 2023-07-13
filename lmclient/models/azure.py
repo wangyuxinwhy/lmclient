@@ -4,10 +4,10 @@ import os
 
 import openai
 
-from lmclient.protocols import CompletionModel
+from lmclient.types import ChatModel, Message, Messages
 
 
-class AzureCompletion(CompletionModel):
+class AzureChat(ChatModel):
     def __init__(
         self,
         model: str | None = None,
@@ -22,15 +22,19 @@ class AzureCompletion(CompletionModel):
         openai.api_base = api_base or os.environ['AZURE_API_BASE']
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
 
-    def complete(self, prompt: str, **kwargs) -> str:
-        messages = [{'role': 'user', 'content': prompt}]
-        response = openai.ChatCompletion.create(engine=self.model, messages=messages, **kwargs)
+    def complete(self, prompt: Messages | str, **kwargs) -> str:
+        if isinstance(prompt, str):
+            prompt = [Message(role='user', content=prompt)]
+
+        response = openai.ChatCompletion.create(engine=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore
         return completion
 
-    async def async_complete(self, prompt: str, **kwargs) -> str:
-        messages = [{'role': 'user', 'content': prompt}]
-        response = await openai.ChatCompletion.acreate(engine=self.model, messages=messages, **kwargs)
+    async def async_complete(self, prompt: Messages | str, **kwargs) -> str:
+        if isinstance(prompt, str):
+            prompt = [Message(role='user', content=prompt)]
+
+        response = await openai.ChatCompletion.acreate(engine=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore
         return completion
 

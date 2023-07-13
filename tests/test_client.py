@@ -1,16 +1,19 @@
+from __future__ import annotations
+
 import time
 
 from lmclient.client import LMClient
+from lmclient.types import Messages
 
 
 class TestCompletion:
     def __init__(self) -> None:
         self.identifier = 'TestCompletion'
 
-    def complete(self, prompt: str, **kwargs) -> str:
+    def complete(self, prompt: str | Messages, **kwargs) -> str:
         return f'Completed: {prompt}'
 
-    async def async_complete(self, prompt: str, **kwargs) -> str:
+    async def async_complete(self, prompt: str | Messages, **kwargs) -> str:
         return f'Completed: {prompt}'
 
 
@@ -18,7 +21,11 @@ def test_sync_completion():
     completion_model = TestCompletion()
     client = LMClient(completion_model)
 
-    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball']
+    messages = [
+        {'role': 'system', 'content': 'your are lmclient demo assistant'},
+        {'role': 'user', 'content': 'hello, who are you?'},
+    ]
+    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball', messages]
     completions = client.run(prompts)
 
     assert isinstance(completions[0], str)
@@ -32,7 +39,11 @@ def test_async_completion():
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
-    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball'] * 4
+    messages = [
+        {'role': 'system', 'content': 'your are lmclient demo assistant'},
+        {'role': 'user', 'content': 'hello, who are you?'},
+    ]
+    prompts = ['Hello, my name is', 'I am a student', messages] * 4
     completions = client.async_run(prompts)
     elapsed_time = time.perf_counter() - start_time
 

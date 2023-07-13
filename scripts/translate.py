@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from lmclient import OpenAICompletion, AzureCompletion, LMClient
+from lmclient import AzureChat, LMClient, OpenAIChat
 from lmclient.client import ErrorMode
 
 
@@ -20,20 +20,20 @@ def read_from_jsonl(file: str | Path):
 def main(
     input_josnl_file: Path,
     output_file: Path,
-    model: str = 'gpt-3.5-turbo',
+    model_name: str = 'gpt-3.5-turbo',
     max_requests_per_minute: int = 20,
     async_capacity: int = 3,
     error_mode: ErrorMode = ErrorMode.IGNORE,
     cache_dir: str = 'lmclient-translate-cache',
 ):
 
-    if model == 'azure':
-        completion_model = AzureCompletion()
+    if model_name == 'azure':
+        model = AzureChat()
     else:
-        completion_model = OpenAICompletion(model)
+        model = OpenAIChat(model_name)
 
     client = LMClient(
-        completion_model,
+        model,
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,
         error_mode=error_mode,
