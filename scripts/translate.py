@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from lmclient import AzureChat, LMClient, OpenAIChat, MinimaxChat
+from lmclient import AzureChat, LMClient, MinimaxChat, OpenAIChat
 from lmclient.client import ErrorMode
 
 

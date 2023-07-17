@@ -9,6 +9,7 @@ from lmclient.types import ChatModel, Messages
 class TestModel(ChatModel):
     def __init__(self) -> None:
         self.identifier = 'TestCompletion'
+        self.timeout = None
 
     def chat(self, prompt: str | Messages, **kwargs) -> str:
         return f'Completed: {prompt}'

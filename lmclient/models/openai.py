@@ -19,10 +19,13 @@ class OpenAIChat(ChatModel):
         openai.api_base = 'https://api.openai.com/v1'
         openai.api_key = api_key or os.environ['OPENAI_API_KEY']
         openai.api_version = None
+        self.timeout = None
 
     def chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
+        if self.timeout:
+            kwargs['request_timeout'] = self.timeout
 
         response = openai.ChatCompletion.create(model=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore
@@ -31,6 +34,8 @@ class OpenAIChat(ChatModel):
     async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
+        if self.timeout:
+            kwargs['request_timeout'] = self.timeout
 
         response = await openai.ChatCompletion.acreate(model=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore

@@ -20,6 +20,7 @@ class MinimaxChat(ChatModel):
 
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
+        self.timeout = None
 
     def chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
@@ -30,11 +31,14 @@ class MinimaxChat(ChatModel):
             'Content-Type': 'application/json',
         }
         json_data = self._messages_to_request_json_data(prompt)
+        if 'temperature' in kwargs:
+            kwargs['temperature'] = max(0.01, kwargs['temperature'])
         json_data.update(kwargs)
         response = requests.post(
             f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
             json=json_data,
             headers=headers,
+            timeout=self.timeout,
         ).json()
         completion: str = response['choices'][0]['text']  # type: ignore
         return completion
@@ -42,10 +46,7 @@ class MinimaxChat(ChatModel):
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {
             'model': self.model_name,
-            "role_meta": {
-                "user_name": "用户",
-                "bot_name": "MM智能助理"
-            },
+            'role_meta': {'user_name': '用户', 'bot_name': 'MM智能助理'},
         }
 
         if messages[0]['role'] == 'system':
@@ -81,11 +82,14 @@ class MinimaxChat(ChatModel):
                 'Content-Type': 'application/json',
             }
             json_data = self._messages_to_request_json_data(prompt)
+            if 'temperature' in kwargs:
+                kwargs['temperature'] = max(0.01, kwargs['temperature'])
             json_data.update(kwargs)
             response = await client.post(
                 f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
                 json=json_data,
                 headers=headers,
+                timeout=self.timeout,
             )
             response = response.json()
 

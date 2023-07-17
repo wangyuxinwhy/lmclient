@@ -21,10 +21,13 @@ class AzureChat(ChatModel):
         openai.api_key = api_key or os.environ['AZURE_API_KEY']
         openai.api_base = api_base or os.environ['AZURE_API_BASE']
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
+        self.timeout = None
 
     def chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
+        if self.timeout:
+            kwargs['request_timeout'] = self.timeout
 
         response = openai.ChatCompletion.create(engine=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore
@@ -33,6 +36,8 @@ class AzureChat(ChatModel):
     async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
+        if self.timeout:
+            kwargs['request_timeout'] = self.timeout
 
         response = await openai.ChatCompletion.acreate(engine=self.model, messages=prompt, **kwargs)
         completion: str = response.choices[0]['message']['content']  # type: ignore

@@ -17,6 +17,7 @@ Messages = Sequence[Message]
 
 @runtime_checkable
 class ChatModel(Protocol):
+    timeout: float | None
     identifier: str
 
     def chat(self, prompt: Messages | str, **kwargs) -> str:

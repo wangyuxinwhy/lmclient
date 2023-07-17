@@ -38,7 +38,7 @@ class LMClient:
         cache_dir: str | None = None,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
     ):
-        self.completion_model = model
+        self.model = model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
@@ -46,14 +46,10 @@ class LMClient:
         self._task_created_time_list: list[int] = []
         self.cache = diskcache.Cache(cache_dir) if cache_dir is not None else None
 
-        if timeout is None:
-            default_kwargs = {}
-        else:
-            default_kwargs = {'request_timeout': timeout}
-        self.default_kwargs = default_kwargs
+        if timeout is not None:
+            self.model.timeout = timeout
 
     def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
-        kwargs = {**self.default_kwargs, **kwargs}
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         completions: list[str] = []
         for prompt in prompts:
@@ -64,7 +60,6 @@ class LMClient:
 
     @asyncer.runnify
     async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
-        kwargs = {**self.default_kwargs, **kwargs}
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -108,7 +103,7 @@ class LMClient:
                 self._task_created_time_list.append(int(time.time()))
 
             try:
-                completion = await self.completion_model.async_chat(prompt=prompt, **kwargs)
+                completion = await self.model.async_chat(prompt=prompt, **kwargs)
                 if self.cache is not None:
                     self.cache[task_key] = completion
             except BaseException as e:
@@ -135,7 +130,7 @@ class LMClient:
         self._task_created_time_list.append(int(time.time()))
 
         try:
-            completion = self.completion_model.chat(prompt=prompt, **kwargs)
+            completion = self.model.chat(prompt=prompt, **kwargs)
             if self.cache is not None:
                 self.cache[task_key] = completion
         except BaseException as e:
@@ -167,7 +162,7 @@ class LMClient:
         if not isinstance(prompt, str):
             prompt = '---'.join([f'{message["role"]}={message["content"]}' for message in prompt])
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
-        items = [prompt, self.completion_model.identifier] + items
+        items = [prompt, self.model.identifier] + items
         task_string = '---'.join(items)
         return self.md5_hash(task_string)
 
@@ -179,7 +174,5 @@ class LMClient:
         use_progress_bar = (self.progress_bar_mode is ProgressBarMode.ALWAYS) or (
             self.progress_bar_mode is ProgressBarMode.AUTO and num_tasks > self.PROGRESS_BAR_THRESHOLD
         )
-        progress_bar = tqdm.tqdm(
-            desc=f'{self.completion_model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar
-        )
+        progress_bar = tqdm.tqdm(desc=f'{self.model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar)
         return progress_bar
