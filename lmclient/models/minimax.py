@@ -40,7 +40,37 @@ class MinimaxChat(ChatModel):
             headers=headers,
             timeout=self.timeout,
         ).json()
-        completion: str = response['choices'][0]['text']  # type: ignore
+        try:
+            completion: str = response['choices'][0]['text']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
+        return completion
+
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+        if isinstance(prompt, str):
+            prompt = [Message(role='user', content=prompt)]
+
+        async with httpx.AsyncClient() as client:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json',
+            }
+            json_data = self._messages_to_request_json_data(prompt)
+            if 'temperature' in kwargs:
+                kwargs['temperature'] = max(0.01, kwargs['temperature'])
+            json_data.update(kwargs)
+            response = await client.post(
+                f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
+                json=json_data,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response = response.json()
+
+        try:
+            completion: str = response['choices'][0]['text']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
         return completion
 
     def _messages_to_request_json_data(self, messages: Messages):
@@ -71,30 +101,6 @@ class MinimaxChat(ChatModel):
             )
         data['messages'] = minimax_messages
         return data
-
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
-
-        async with httpx.AsyncClient() as client:
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json',
-            }
-            json_data = self._messages_to_request_json_data(prompt)
-            if 'temperature' in kwargs:
-                kwargs['temperature'] = max(0.01, kwargs['temperature'])
-            json_data.update(kwargs)
-            response = await client.post(
-                f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
-                json=json_data,
-                headers=headers,
-                timeout=self.timeout,
-            )
-            response = response.json()
-
-        completion: str = response['choices'][0]['text']  # type: ignore
-        return completion
 
     @property
     def identifier(self) -> str:

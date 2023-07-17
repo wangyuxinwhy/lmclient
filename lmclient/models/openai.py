@@ -28,7 +28,10 @@ class OpenAIChat(ChatModel):
             kwargs['request_timeout'] = self.timeout
 
         response = openai.ChatCompletion.create(model=self.model, messages=prompt, **kwargs)
-        completion: str = response.choices[0]['message']['content']  # type: ignore
+        try:
+            completion: str = response.choices[0]['message']['content']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
         return completion
 
     async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
@@ -38,7 +41,10 @@ class OpenAIChat(ChatModel):
             kwargs['request_timeout'] = self.timeout
 
         response = await openai.ChatCompletion.acreate(model=self.model, messages=prompt, **kwargs)
-        completion: str = response.choices[0]['message']['content']  # type: ignore
+        try:
+            completion: str = response.choices[0]['message']['content']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
         return completion
 
     @property

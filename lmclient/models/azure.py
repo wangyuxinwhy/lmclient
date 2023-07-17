@@ -30,7 +30,10 @@ class AzureChat(ChatModel):
             kwargs['request_timeout'] = self.timeout
 
         response = openai.ChatCompletion.create(engine=self.model, messages=prompt, **kwargs)
-        completion: str = response.choices[0]['message']['content']  # type: ignore
+        try:
+            completion: str = response.choices[0]['message']['content']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
         return completion
 
     async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
@@ -40,7 +43,10 @@ class AzureChat(ChatModel):
             kwargs['request_timeout'] = self.timeout
 
         response = await openai.ChatCompletion.acreate(engine=self.model, messages=prompt, **kwargs)
-        completion: str = response.choices[0]['message']['content']  # type: ignore
+        try:
+            completion: str = response.choices[0]['message']['content']  # type: ignore
+        except (KeyError, IndexError):
+            raise ValueError(f'Invalid response: {response}')
         return completion
 
     @property
