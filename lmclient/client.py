@@ -108,7 +108,7 @@ class LMClient:
                 self._task_created_time_list.append(int(time.time()))
 
             try:
-                completion = await self.completion_model.async_complete(prompt=prompt, **kwargs)
+                completion = await self.completion_model.async_chat(prompt=prompt, **kwargs)
                 if self.cache is not None:
                     self.cache[task_key] = completion
             except BaseException as e:
@@ -135,7 +135,7 @@ class LMClient:
         self._task_created_time_list.append(int(time.time()))
 
         try:
-            completion = self.completion_model.complete(prompt=prompt, **kwargs)
+            completion = self.completion_model.chat(prompt=prompt, **kwargs)
             if self.cache is not None:
                 self.cache[task_key] = completion
         except BaseException as e:

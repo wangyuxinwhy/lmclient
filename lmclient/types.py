@@ -19,8 +19,8 @@ Messages = Sequence[Message]
 class ChatModel(Protocol):
     identifier: str
 
-    def complete(self, prompt: Messages | str, **kwargs) -> str:
+    def chat(self, prompt: Messages | str, **kwargs) -> str:
         ...
 
-    async def async_complete(self, prompt: Messages | str, **kwargs) -> str:
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
         ...

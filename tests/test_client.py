@@ -3,22 +3,22 @@ from __future__ import annotations
 import time
 
 from lmclient.client import LMClient
-from lmclient.types import Messages
+from lmclient.types import ChatModel, Messages
 
 
-class TestCompletion:
+class TestModel(ChatModel):
     def __init__(self) -> None:
         self.identifier = 'TestCompletion'
 
-    def complete(self, prompt: str | Messages, **kwargs) -> str:
+    def chat(self, prompt: str | Messages, **kwargs) -> str:
         return f'Completed: {prompt}'
 
-    async def async_complete(self, prompt: str | Messages, **kwargs) -> str:
+    async def async_chat(self, prompt: str | Messages, **kwargs) -> str:
         return f'Completed: {prompt}'
 
 
 def test_sync_completion():
-    completion_model = TestCompletion()
+    completion_model = TestModel()
     client = LMClient(completion_model)
 
     messages = [
@@ -34,7 +34,7 @@ def test_sync_completion():
 
 
 def test_async_completion():
-    completion_model = TestCompletion()
+    completion_model = TestModel()
     client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
@@ -54,7 +54,7 @@ def test_async_completion():
 
 
 def test_async_completion_with_cache(tmp_path):
-    completion_model = TestCompletion()
+    completion_model = TestModel()
     client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=str(tmp_path))
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 

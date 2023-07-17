@@ -22,7 +22,7 @@ class AzureChat(ChatModel):
         openai.api_base = api_base or os.environ['AZURE_API_BASE']
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
 
-    def complete(self, prompt: Messages | str, **kwargs) -> str:
+    def chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 
@@ -30,7 +30,7 @@ class AzureChat(ChatModel):
         completion: str = response.choices[0]['message']['content']  # type: ignore
         return completion
 
-    async def async_complete(self, prompt: Messages | str, **kwargs) -> str:
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 

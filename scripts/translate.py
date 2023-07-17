@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from lmclient import AzureChat, LMClient, OpenAIChat
+from lmclient import AzureChat, LMClient, OpenAIChat, MinimaxChat
 from lmclient.client import ErrorMode
 
 
@@ -29,6 +29,8 @@ def main(
 
     if model_name == 'azure':
         model = AzureChat()
+    elif model_name == 'minimax':
+        model = MinimaxChat('abab5.5-chat')
     else:
         model = OpenAIChat(model_name)
 
