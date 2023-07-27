@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
+import os
 import time
 from enum import Enum
-from typing import ClassVar, Sequence
+from pathlib import Path
+from typing import Callable, ClassVar, Sequence, cast
 
 import anyio
 import asyncer
 import diskcache
 import tqdm
 
-from lmclient.types import ChatModel, Messages
+from lmclient.types import ChatModel, Messages, ModelResponse, TaskResult
+from lmclient.version import __cache_version__
+
+DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
 
 
 class ErrorMode(str, Enum):
@@ -35,8 +41,9 @@ class LMClient:
         async_capacity: int = 3,
         timeout: int | None = 20,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
-        cache_dir: str | None = None,
+        cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
+        postprocess_function: Callable[[ModelResponse], ModelResponse] | None = None,
     ):
         self.model = model
         self.async_capacity = async_capacity
@@ -44,27 +51,37 @@ class LMClient:
         self.error_mode = ErrorMode(error_mode)
         self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
-        self.cache = diskcache.Cache(cache_dir) if cache_dir is not None else None
+
+        cache_dir = Path(cache_dir) if cache_dir is not None else None
+        if cache_dir is not None:
+            if cache_dir.exists() and not cache_dir.is_dir():
+                raise ValueError(f'Cache directory {cache_dir} is not a directory')
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache = diskcache.Cache(cache_dir)
+        else:
+            self.cache = None
+
+        self.postprocess_function = postprocess_function or self.model.default_postprocess_function
 
         if timeout is not None:
             self.model.timeout = timeout
 
-    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
+    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
-        completions: list[str] = []
+        task_results: list[TaskResult] = []
         for prompt in prompts:
-            completion = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
-            completions.append(completion)
+            task_result = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
+            task_results.append(task_result)
         progress_bar.close()
-        return completions
+        return task_results
 
     @asyncer.runnify
-    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[str]:
+    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
 
-        soon_values: list[asyncer.SoonValue[str]] = []
+        soon_values: list[asyncer.SoonValue[TaskResult]] = []
         async with asyncer.create_task_group() as task_group:
             soon_func = task_group.soonify(self._async_run_single_task)
             for prompt in prompts:
@@ -88,13 +105,19 @@ class LMClient:
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm,
         **kwargs,
-    ) -> str:
+    ) -> TaskResult:
         async with limiter:
             task_key = self._gen_task_key(prompt=prompt, **kwargs)
-            if self.cache is not None and task_key in self.cache:
-                completion = self.cache[task_key]  # type: ignore
+
+            cache_response = self.read_from_cache(task_key)
+            if cache_response is not None:
+                if inspect.iscoroutinefunction(self.postprocess_function):
+                    response = await self.postprocess_function(cache_response)
+                else:
+                    response = self.postprocess_function(cache_response)
+                result = TaskResult(response=response)
                 progress_bar.update(1)
-                return completion
+                return result
 
             async with task_created_lock:
                 sleep_time = self._calculate_sleep_time()
@@ -103,26 +126,43 @@ class LMClient:
                 self._task_created_time_list.append(int(time.time()))
 
             try:
-                completion = await self.model.async_chat(prompt=prompt, **kwargs)
+                response = await self.model.async_chat(prompt=prompt, **kwargs)
                 if self.cache is not None:
-                    self.cache[task_key] = completion
+                    self.cache[task_key] = response
             except BaseException as e:
                 if self.error_mode is ErrorMode.RAISE:
                     raise
                 elif self.error_mode is ErrorMode.IGNORE:
-                    completion: str = f'Error: {e}'
+                    return TaskResult(error_message=str(e))
+                else:
+                    raise ValueError(f'Unknown error mode: {self.error_mode}')
+
+            try:
+                if inspect.iscoroutinefunction(self.postprocess_function):
+                    response = await self.postprocess_function(response)
+                else:
+                    response = self.postprocess_function(response)
+                result = TaskResult(response=response)
+            except BaseException as e:
+                if self.error_mode is ErrorMode.RAISE:
+                    raise
+                elif self.error_mode is ErrorMode.IGNORE:
+                    result = TaskResult(error_message=f'Error: {e}', response=response)
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}')
 
             progress_bar.update(1)
-            return completion
+            return result
 
-    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> str:
+    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> TaskResult:
         task_key = self._gen_task_key(prompt=prompt, **kwargs)
-        if self.cache is not None and task_key in self.cache:
-            completion = self.cache[task_key]  # type: ignore
+
+        cache_response = self.read_from_cache(task_key)
+        if cache_response is not None:
+            response = self.postprocess_function(cache_response)
+            result = TaskResult(response=response)
             progress_bar.update(1)
-            return completion
+            return result
 
         sleep_time = self._calculate_sleep_time()
         if sleep_time > 0:
@@ -130,19 +170,37 @@ class LMClient:
         self._task_created_time_list.append(int(time.time()))
 
         try:
-            completion = self.model.chat(prompt=prompt, **kwargs)
+            response = self.model.chat(prompt=prompt, **kwargs)
             if self.cache is not None:
-                self.cache[task_key] = completion
+                self.cache[task_key] = response
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:
                 raise
             elif self.error_mode is ErrorMode.IGNORE:
-                completion: str = f'Error: {e}'
+                return TaskResult(error_message=str(e))
+            else:
+                raise ValueError(f'Unknown error mode: {self.error_mode}')
+
+        try:
+            response = self.postprocess_function(response)
+            result = TaskResult(response=response)
+        except BaseException as e:
+            if self.error_mode is ErrorMode.RAISE:
+                raise
+            elif self.error_mode is ErrorMode.IGNORE:
+                result = TaskResult(error_message=f'Error: {e}', response=response)
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}')
 
         progress_bar.update(1)
-        return completion
+        return result
+
+    def read_from_cache(self, key: str) -> ModelResponse | None:
+        if self.cache is not None and key in self.cache:
+            response = self.cache[key]
+            response = cast(ModelResponse, response)
+            return response
+        return
 
     def _calculate_sleep_time(self):
         idx = 0
@@ -162,6 +220,7 @@ class LMClient:
         if not isinstance(prompt, str):
             prompt = '---'.join([f'{message["role"]}={message["content"]}' for message in prompt])
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
+        items += [f'__cache_version__={__cache_version__}']
         items = [prompt, self.model.identifier] + items
         task_string = '---'.join(items)
         return self.md5_hash(task_string)

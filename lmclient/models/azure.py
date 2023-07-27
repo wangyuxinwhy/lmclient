@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from typing import cast
 
 import openai
+from openai.openai_object import OpenAIObject
 
-from lmclient.types import ChatModel, Message, Messages
+from lmclient.types import ChatModel, Message, Messages, ModelResponse
 
 
 class AzureChat(ChatModel):
@@ -23,31 +25,33 @@ class AzureChat(ChatModel):
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
         self.timeout = None
 
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
+    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
         response = openai.ChatCompletion.create(engine=self.model, messages=prompt, **kwargs)
-        try:
-            completion: str = response.choices[0]['message']['content']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        response = cast(OpenAIObject, response)
+        return response.to_dict_recursive()
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
         response = await openai.ChatCompletion.acreate(engine=self.model, messages=prompt, **kwargs)
+        response = cast(OpenAIObject, response)
+        return response.to_dict_recursive()
+
+    @staticmethod
+    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
         try:
-            completion: str = response.choices[0]['message']['content']  # type: ignore
+            response['content'] = response['choices'][0]['message']['content']
         except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+            response['content'] = 'Error Response'
+        return response
 
     @property
     def identifier(self) -> str:

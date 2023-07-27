@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence, TypedDict, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Dict, Protocol, Sequence, TypedDict, runtime_checkable
 
 from typing_extensions import NotRequired
 
@@ -13,6 +14,7 @@ class Message(TypedDict):
 
 
 Messages = Sequence[Message]
+ModelResponse = Dict[str, Any]
 
 
 @runtime_checkable
@@ -20,8 +22,18 @@ class ChatModel(Protocol):
     timeout: float | None
     identifier: str
 
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
+    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         ...
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         ...
+
+    @staticmethod
+    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
+        ...
+
+
+@dataclass
+class TaskResult:
+    response: ModelResponse = field(default_factory=dict)
+    error_message: str | None = None

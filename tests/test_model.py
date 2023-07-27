@@ -17,8 +17,8 @@ def test_azure_model(prompt):
     sync_output = model.chat(prompt)
     async_output = anyio.run(model.async_chat, prompt)
 
-    assert isinstance(sync_output, str)
-    assert isinstance(async_output, str)
+    assert isinstance(sync_output, dict)
+    assert isinstance(async_output, dict)
 
 
 @pytest.mark.parametrize(
@@ -34,8 +34,8 @@ def test_openai_model(prompt):
     sync_output = completion_model.chat(prompt)
     async_output = anyio.run(completion_model.async_chat, prompt)
 
-    assert isinstance(sync_output, str)
-    assert isinstance(async_output, str)
+    assert isinstance(sync_output, dict)
+    assert isinstance(async_output, dict)
 
 
 @pytest.mark.parametrize(
@@ -51,5 +51,5 @@ def test_minimax_model(prompt):
     sync_output = completion_model.chat(prompt)
     async_output = anyio.run(completion_model.async_chat, prompt)
 
-    assert isinstance(sync_output, str)
-    assert isinstance(async_output, str)
+    assert isinstance(sync_output, dict)
+    assert isinstance(async_output, dict)

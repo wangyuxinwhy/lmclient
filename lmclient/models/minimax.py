@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import requests
 
-from lmclient.types import ChatModel, Message, Messages
+from lmclient.types import ChatModel, Message, Messages, ModelResponse
 
 
 class MinimaxChat(ChatModel):
@@ -22,7 +22,7 @@ class MinimaxChat(ChatModel):
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
         self.timeout = None
 
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
+    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 
@@ -40,13 +40,9 @@ class MinimaxChat(ChatModel):
             headers=headers,
             timeout=self.timeout,
         ).json()
-        try:
-            completion: str = response['choices'][0]['text']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        return response
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 
@@ -66,12 +62,15 @@ class MinimaxChat(ChatModel):
                 timeout=self.timeout,
             )
             response = response.json()
+        return response
 
+    @staticmethod
+    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
         try:
-            completion: str = response['choices'][0]['text']  # type: ignore
+            response['content'] = response['choices'][0]['message']['text']
         except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+            response['content'] = 'Error Response'
+        return response
 
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {
