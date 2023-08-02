@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import os
 import time
 from enum import Enum
@@ -109,24 +108,53 @@ class LMClient:
         async with limiter:
             task_key = self._gen_task_key(prompt=prompt, **kwargs)
 
-            cache_response = self.read_from_cache(task_key)
-            if cache_response is not None:
-                if inspect.iscoroutinefunction(self.postprocess_function):
-                    response = await self.postprocess_function(cache_response)
-                else:
-                    response = self.postprocess_function(cache_response)
-                result = TaskResult(response=response)
-                progress_bar.update(1)
-                return result
+            response = self.read_from_cache(task_key)
 
-            async with task_created_lock:
-                sleep_time = self._calculate_sleep_time()
-                if sleep_time > 0:
-                    await anyio.sleep(sleep_time)
-                self._task_created_time_list.append(int(time.time()))
+            if response is None:
+                async with task_created_lock:
+                    sleep_time = self._calculate_sleep_time()
+                    if sleep_time > 0:
+                        await anyio.sleep(sleep_time)
+                    self._task_created_time_list.append(int(time.time()))
+
+                try:
+                    response = await self.model.async_chat(prompt=prompt, **kwargs)
+                    if self.cache is not None:
+                        self.cache[task_key] = response
+                except BaseException as e:
+                    if self.error_mode is ErrorMode.RAISE:
+                        raise
+                    elif self.error_mode is ErrorMode.IGNORE:
+                        return TaskResult(error_message=str(e))
+                    else:
+                        raise ValueError(f'Unknown error mode: {self.error_mode}')
 
             try:
-                response = await self.model.async_chat(prompt=prompt, **kwargs)
+                output = self.postprocess_function(response)
+                result = TaskResult(response=response, output=output)
+            except BaseException as e:
+                if self.error_mode is ErrorMode.RAISE:
+                    raise
+                elif self.error_mode is ErrorMode.IGNORE:
+                    result = TaskResult(error_message=str(e), response=response)
+                else:
+                    raise ValueError(f'Unknown error mode: {self.error_mode}')
+
+            progress_bar.update(1)
+            return result
+
+    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> TaskResult:
+        task_key = self._gen_task_key(prompt=prompt, **kwargs)
+
+        response = self.read_from_cache(task_key)
+        if response is None:
+            sleep_time = self._calculate_sleep_time()
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            self._task_created_time_list.append(int(time.time()))
+
+            try:
+                response = self.model.chat(prompt=prompt, **kwargs)
                 if self.cache is not None:
                     self.cache[task_key] = response
             except BaseException as e:
@@ -137,58 +165,14 @@ class LMClient:
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}')
 
-            try:
-                if inspect.iscoroutinefunction(self.postprocess_function):
-                    response = await self.postprocess_function(response)
-                else:
-                    response = self.postprocess_function(response)
-                result = TaskResult(response=response)
-            except BaseException as e:
-                if self.error_mode is ErrorMode.RAISE:
-                    raise
-                elif self.error_mode is ErrorMode.IGNORE:
-                    result = TaskResult(error_message=f'Error: {e}', response=response)
-                else:
-                    raise ValueError(f'Unknown error mode: {self.error_mode}')
-
-            progress_bar.update(1)
-            return result
-
-    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> TaskResult:
-        task_key = self._gen_task_key(prompt=prompt, **kwargs)
-
-        cache_response = self.read_from_cache(task_key)
-        if cache_response is not None:
-            response = self.postprocess_function(cache_response)
-            result = TaskResult(response=response)
-            progress_bar.update(1)
-            return result
-
-        sleep_time = self._calculate_sleep_time()
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-        self._task_created_time_list.append(int(time.time()))
-
         try:
-            response = self.model.chat(prompt=prompt, **kwargs)
-            if self.cache is not None:
-                self.cache[task_key] = response
+            output = self.postprocess_function(response)
+            result = TaskResult(response=response, output=output)
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:
                 raise
             elif self.error_mode is ErrorMode.IGNORE:
-                return TaskResult(error_message=str(e))
-            else:
-                raise ValueError(f'Unknown error mode: {self.error_mode}')
-
-        try:
-            response = self.postprocess_function(response)
-            result = TaskResult(response=response)
-        except BaseException as e:
-            if self.error_mode is ErrorMode.RAISE:
-                raise
-            elif self.error_mode is ErrorMode.IGNORE:
-                result = TaskResult(error_message=f'Error: {e}', response=response)
+                result = TaskResult(error_message=str(e), response=response)
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}')
 

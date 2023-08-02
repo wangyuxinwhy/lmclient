@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import requests
 
+from lmclient.exceptions import PostProcessError
 from lmclient.types import ChatModel, Message, Messages, ModelResponse
 
 
@@ -65,12 +66,12 @@ class MinimaxChat(ChatModel):
         return response
 
     @staticmethod
-    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
+    def default_postprocess_function(response: ModelResponse) -> str:
         try:
-            response['content'] = response['choices'][0]['message']['text']
-        except (KeyError, IndexError):
-            response['content'] = 'Error Response'
-        return response
+            output = response['choices'][0]['message']['text']
+        except (KeyError, IndexError) as e:
+            raise PostProcessError('Parse response failed') from e
+        return output
 
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {

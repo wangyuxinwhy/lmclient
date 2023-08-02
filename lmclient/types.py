@@ -29,11 +29,12 @@ class ChatModel(Protocol):
         ...
 
     @staticmethod
-    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
+    def default_postprocess_function(response: ModelResponse) -> Any:
         ...
 
 
 @dataclass
 class TaskResult:
     response: ModelResponse = field(default_factory=dict)
+    output: Any = None
     error_message: str | None = None

@@ -47,11 +47,11 @@ def main(
     for text in texts:
         prompt = f'translate following sentece to chinese\nsentence: {text}\ntranslation: '
         prompts.append(prompt)
-    completions = client.async_run(prompts)
+    results = client.async_run(prompts)
 
     with open(output_file, 'w') as f:
-        for text, completion in zip(texts, completions):
-            f.write(json.dumps({'text': text, 'translation': completion}, ensure_ascii=False) + '\n')
+        for text, result in zip(texts, results):
+            f.write(json.dumps({'text': text, 'translation': result.output}, ensure_ascii=False) + '\n')
 
 
 if __name__ == '__main__':

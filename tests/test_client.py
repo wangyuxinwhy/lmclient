@@ -21,8 +21,8 @@ class TestModel(ChatModel):
             'content': f'Completed: {prompt}',
         }
 
-    def default_postprocess_function(self, response: ModelResponse) -> ModelResponse:
-        return response
+    def default_postprocess_function(self, response: ModelResponse) -> str:
+        return response['content']
 
 
 def test_sync_completion():
@@ -38,12 +38,13 @@ def test_sync_completion():
 
     assert isinstance(results[0].response['content'], str)
     assert results[0].response['content'] == 'Completed: Hello, my name is'
+    assert results[0].output == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
 
 
 def test_async_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
@@ -53,18 +54,17 @@ def test_async_completion():
     ]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4
     results = client.async_run(prompts)
-    content = results[0].response['content']
     elapsed_time = time.perf_counter() - start_time
 
-    assert isinstance(content, str)
-    assert content == 'Completed: Hello, my name is'
+    assert results[0].response['content'] == 'Completed: Hello, my name is'
+    assert results[0].output == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time > 4
 
 
 def test_async_completion_with_cache(tmp_path):
     completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=str(tmp_path))
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=tmp_path)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()

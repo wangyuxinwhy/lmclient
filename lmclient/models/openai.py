@@ -6,6 +6,7 @@ from typing import cast
 import openai
 from openai.openai_object import OpenAIObject
 
+from lmclient.exceptions import PostProcessError
 from lmclient.types import ChatModel, Message, Messages, ModelResponse
 
 
@@ -44,12 +45,12 @@ class OpenAIChat(ChatModel):
         return response.to_dict_recursive()
 
     @staticmethod
-    def default_postprocess_function(response: ModelResponse) -> ModelResponse:
+    def default_postprocess_function(response: ModelResponse) -> str:
         try:
-            response['content'] = response['choices'][0]['message']['content']  # type: ignore
-        except (KeyError, IndexError):
-            response['content'] = 'Error Response'
-        return response
+            output = response['choices'][0]['message']['content']  # type: ignore
+        except (KeyError, IndexError) as e:
+            raise PostProcessError('Parse response failed') from e
+        return output
 
     @property
     def identifier(self) -> str:
