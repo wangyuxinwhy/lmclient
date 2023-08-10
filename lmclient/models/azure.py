@@ -1,54 +1,56 @@
 from __future__ import annotations
 
 import os
+from typing import cast
 
 import openai
+from openai.openai_object import OpenAIObject
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from lmclient.types import ChatModel, Message, Messages
+from lmclient.models.base import BaseChatModel
+from lmclient.types import Message, Messages, ModelResponse
 
 
-class AzureChat(ChatModel):
+class AzureChat(BaseChatModel):
     def __init__(
         self,
-        model: str | None = None,
+        engine: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         api_version: str | None = None,
+        timeout: int | None = 60,
     ):
-        self.model = model or os.environ['AZURE_CHAT_API_ENGINE']
+        self.engine = engine or os.environ['AZURE_CHAT_API_ENGINE']
 
         openai.api_type = 'azure'
         openai.api_key = api_key or os.environ['AZURE_API_KEY']
         openai.api_base = api_base or os.environ['AZURE_API_BASE']
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
-        self.timeout = None
 
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
+        self.timeout = timeout
+
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
-        response = openai.ChatCompletion.create(engine=self.model, messages=prompt, **kwargs)
-        try:
-            completion: str = response.choices[0]['message']['content']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        response = openai.ChatCompletion.create(engine=self.engine, messages=prompt, **kwargs)
+        response = cast(OpenAIObject, response)
+        return response.to_dict_recursive()
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
-        response = await openai.ChatCompletion.acreate(engine=self.model, messages=prompt, **kwargs)
-        try:
-            completion: str = response.choices[0]['message']['content']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        response = await openai.ChatCompletion.acreate(engine=self.engine, messages=prompt, **kwargs)
+        response = cast(OpenAIObject, response)
+        return response.to_dict_recursive()
 
     @property
     def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model})'
+        return f'{self.__class__.__name__}({self.engine})'

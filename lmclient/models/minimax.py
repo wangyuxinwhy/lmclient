@@ -5,24 +5,28 @@ from typing import Any
 
 import httpx
 import requests
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from lmclient.types import ChatModel, Message, Messages
+from lmclient.models.base import BaseChatModel
+from lmclient.types import Message, Messages, ModelResponse
 
 
-class MinimaxChat(ChatModel):
+class MinimaxChat(BaseChatModel):
     def __init__(
         self,
         model_name: str,
         group_id: str | None = None,
         api_key: str | None = None,
+        timeout: int | None = 60,
     ):
         self.model_name = model_name
 
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
-        self.timeout = None
-
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
+        self.timeout = timeout
+    
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 
@@ -40,13 +44,10 @@ class MinimaxChat(ChatModel):
             headers=headers,
             timeout=self.timeout,
         ).json()
-        try:
-            completion: str = response['choices'][0]['text']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        return response
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
 
@@ -66,12 +67,7 @@ class MinimaxChat(ChatModel):
                 timeout=self.timeout,
             )
             response = response.json()
-
-        try:
-            completion: str = response['choices'][0]['text']  # type: ignore
-        except (KeyError, IndexError):
-            raise ValueError(f'Invalid response: {response}')
-        return completion
+        return response
 
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {

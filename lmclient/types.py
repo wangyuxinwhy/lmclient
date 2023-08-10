@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence, TypedDict, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Dict, Sequence, TypedDict
 
 from typing_extensions import NotRequired
 
@@ -13,15 +14,11 @@ class Message(TypedDict):
 
 
 Messages = Sequence[Message]
+ModelResponse = Dict[str, Any]
 
 
-@runtime_checkable
-class ChatModel(Protocol):
-    timeout: float | None
-    identifier: str
-
-    def chat(self, prompt: Messages | str, **kwargs) -> str:
-        ...
-
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> str:
-        ...
+@dataclass
+class TaskResult:
+    response: ModelResponse = field(default_factory=dict)
+    output: Any = None
+    error_message: str | None = None
