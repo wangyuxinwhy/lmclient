@@ -5,17 +5,24 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Callable, ClassVar, Sequence, cast
+from typing import ClassVar, Sequence, Type, cast
 
 import anyio
 import asyncer
 import diskcache
 import tqdm
 
-from lmclient.types import ChatModel, Messages, ModelResponse, TaskResult
+from lmclient.models import BaseChatModel
+from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser
+from lmclient.types import Messages, ModelResponse, TaskResult
 from lmclient.version import __cache_version__
 
 DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
+DEFAULT_MODEL_PARSER_MAP: dict[str, Type[ModelResponseParser]] = {
+    'OpenAIChat': OpenAIParser,
+    'AzureChat': OpenAIParser,
+    'MinimaxChat': MinimaxTextParser,
+}
 
 
 class ErrorMode(str, Enum):
@@ -30,19 +37,20 @@ class ProgressBarMode(str, Enum):
 
 
 class LMClient:
+    error_mode: ErrorMode
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
     def __init__(
         self,
-        model: ChatModel,
+        model: BaseChatModel,
         max_requests_per_minute: int = 20,
         async_capacity: int = 3,
-        timeout: int | None = 20,
+        timeout: int | None = None,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
-        postprocess_function: Callable[[ModelResponse], ModelResponse] | None = None,
+        output_parser: ModelResponseParser | None = None,
     ):
         self.model = model
         self.async_capacity = async_capacity
@@ -60,10 +68,13 @@ class LMClient:
         else:
             self.cache = None
 
-        self.postprocess_function = postprocess_function or self.model.default_postprocess_function
+        self.output_parser = output_parser or DEFAULT_MODEL_PARSER_MAP[self.model.__class__.__name__]()
 
         if timeout is not None:
-            self.model.timeout = timeout
+            if hasattr(self.model, 'timeout'):
+                setattr(self.model, 'timeout', timeout)
+            else:
+                raise ValueError(f'Model {self.model} does not support timeout')
 
     def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -107,7 +118,6 @@ class LMClient:
     ) -> TaskResult:
         async with limiter:
             task_key = self._gen_task_key(prompt=prompt, **kwargs)
-
             response = self.read_from_cache(task_key)
 
             if response is None:
@@ -130,7 +140,7 @@ class LMClient:
                         raise ValueError(f'Unknown error mode: {self.error_mode}')
 
             try:
-                output = self.postprocess_function(response)
+                output = self.output_parser(response)
                 result = TaskResult(response=response, output=output)
             except BaseException as e:
                 if self.error_mode is ErrorMode.RAISE:
@@ -166,7 +176,7 @@ class LMClient:
                     raise ValueError(f'Unknown error mode: {self.error_mode}')
 
         try:
-            output = self.postprocess_function(response)
+            output = self.output_parser(response)
             result = TaskResult(response=response, output=output)
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:

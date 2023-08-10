@@ -3,14 +3,11 @@ from __future__ import annotations
 import time
 
 from lmclient.client import LMClient
-from lmclient.types import ChatModel, Messages, ModelResponse
+from lmclient.models.base import BaseChatModel
+from lmclient.types import Messages, ModelResponse
 
 
-class TestModel(ChatModel):
-    def __init__(self) -> None:
-        self.identifier = 'TestCompletion'
-        self.timeout = None
-
+class TestModel(BaseChatModel):
     def chat(self, prompt: str | Messages, **kwargs) -> ModelResponse:
         return {
             'content': f'Completed: {prompt}',
@@ -25,9 +22,13 @@ class TestModel(ChatModel):
         return response['content']
 
 
+def model_parser(response):
+    return response['content']
+
+
 def test_sync_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model)
+    client = LMClient(completion_model, output_parser=model_parser)
 
     messages = [
         {'role': 'system', 'content': 'your are lmclient demo assistant'},
@@ -36,15 +37,16 @@ def test_sync_completion():
     prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball', messages]
     results = client.run(prompts)
 
-    assert isinstance(results[0].response['content'], str)
-    assert results[0].response['content'] == 'Completed: Hello, my name is'
+    assert isinstance(results[0].output, str)
     assert results[0].output == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
 
 
 def test_async_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None)
+    client = LMClient(
+        completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None, output_parser=model_parser
+    )
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
@@ -64,7 +66,9 @@ def test_async_completion():
 
 def test_async_completion_with_cache(tmp_path):
     completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=tmp_path)
+    client = LMClient(
+        completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=tmp_path, output_parser=model_parser
+    )
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()

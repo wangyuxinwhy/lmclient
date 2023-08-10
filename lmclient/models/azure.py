@@ -5,18 +5,20 @@ from typing import cast
 
 import openai
 from openai.openai_object import OpenAIObject
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from lmclient.exceptions import PostProcessError
-from lmclient.types import ChatModel, Message, Messages, ModelResponse
+from lmclient.models.base import BaseChatModel
+from lmclient.types import Message, Messages, ModelResponse
 
 
-class AzureChat(ChatModel):
+class AzureChat(BaseChatModel):
     def __init__(
         self,
         engine: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         api_version: str | None = None,
+        timeout: int | None = 60,
     ):
         self.engine = engine or os.environ['AZURE_CHAT_API_ENGINE']
 
@@ -25,8 +27,9 @@ class AzureChat(ChatModel):
         openai.api_base = api_base or os.environ['AZURE_API_BASE']
         openai.api_version = api_version or os.getenv('AZURE_API_VERSION') or '2023-05-15'
 
-        self.timeout = None
+        self.timeout = timeout
 
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
@@ -37,6 +40,7 @@ class AzureChat(ChatModel):
         response = cast(OpenAIObject, response)
         return response.to_dict_recursive()
 
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
@@ -46,14 +50,6 @@ class AzureChat(ChatModel):
         response = await openai.ChatCompletion.acreate(engine=self.engine, messages=prompt, **kwargs)
         response = cast(OpenAIObject, response)
         return response.to_dict_recursive()
-
-    @staticmethod
-    def default_postprocess_function(response: ModelResponse) -> str:
-        try:
-            output = response['choices'][0]['message']['content']
-        except (KeyError, IndexError) as e:
-            raise PostProcessError('Parse response failed') from e
-        return output
 
     @property
     def identifier(self) -> str:

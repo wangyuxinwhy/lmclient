@@ -5,24 +5,27 @@ from typing import Any
 
 import httpx
 import requests
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from lmclient.exceptions import PostProcessError
-from lmclient.types import ChatModel, Message, Messages, ModelResponse
+from lmclient.models.base import BaseChatModel
+from lmclient.types import Message, Messages, ModelResponse
 
 
-class MinimaxChat(ChatModel):
+class MinimaxChat(BaseChatModel):
     def __init__(
         self,
         model_name: str,
         group_id: str | None = None,
         api_key: str | None = None,
+        timeout: int | None = 60,
     ):
         self.model_name = model_name
 
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
-        self.timeout = None
-
+        self.timeout = timeout
+    
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
@@ -43,6 +46,7 @@ class MinimaxChat(ChatModel):
         ).json()
         return response
 
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):
             prompt = [Message(role='user', content=prompt)]
@@ -64,14 +68,6 @@ class MinimaxChat(ChatModel):
             )
             response = response.json()
         return response
-
-    @staticmethod
-    def default_postprocess_function(response: ModelResponse) -> str:
-        try:
-            output = response['choices'][0]['message']['text']
-        except (KeyError, IndexError) as e:
-            raise PostProcessError('Parse response failed') from e
-        return output
 
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {
