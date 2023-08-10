@@ -82,5 +82,3 @@ def main(
 
 if __name__ == '__main__':
     typer.run(main)
-    # from pathlib import Path
-    # main(Path('scripts/data/ner_input.jsonl'), Path('d.jsonl'), model_type=ModelType.azure, cache=True)
