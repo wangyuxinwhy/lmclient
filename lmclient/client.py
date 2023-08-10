@@ -5,7 +5,7 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Sequence, Type, cast
+from typing import ClassVar, Generic, Sequence, Type, TypeVar, cast
 
 import anyio
 import asyncer
@@ -24,6 +24,8 @@ DEFAULT_MODEL_PARSER_MAP: dict[str, Type[ModelResponseParser]] = {
     'MinimaxChat': MinimaxTextParser,
 }
 
+T = TypeVar('T')
+
 
 class ErrorMode(str, Enum):
     RAISE = 'raise'
@@ -36,7 +38,7 @@ class ProgressBarMode(str, Enum):
     NEVER = 'never'
 
 
-class LMClient:
+class LMClient(Generic[T]):
     error_mode: ErrorMode
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
@@ -50,7 +52,7 @@ class LMClient:
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
-        output_parser: ModelResponseParser | None = None,
+        output_parser: ModelResponseParser[T] | None = None,
     ):
         self.model = model
         self.async_capacity = async_capacity
@@ -59,15 +61,7 @@ class LMClient:
         self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
 
-        cache_dir = Path(cache_dir) if cache_dir is not None else None
-        if cache_dir is not None:
-            if cache_dir.exists() and not cache_dir.is_dir():
-                raise ValueError(f'Cache directory {cache_dir} is not a directory')
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache = diskcache.Cache(cache_dir)
-        else:
-            self.cache = None
-
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.output_parser = output_parser or DEFAULT_MODEL_PARSER_MAP[self.model.__class__.__name__]()
 
         if timeout is not None:
@@ -76,7 +70,21 @@ class LMClient:
             else:
                 raise ValueError(f'Model {self.model} does not support timeout')
 
-    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult]:
+    @property
+    def cache_dir(self) -> Path | None:
+        return getattr(self, '_cache_dir')
+
+    @cache_dir.setter
+    def cache_dir(self, value: Path | None) -> None:
+        if value is not None:
+            if value.exists() and not value.is_dir():
+                raise ValueError(f'Cache directory {value} is not a directory')
+            value.mkdir(parents=True, exist_ok=True)
+            self._cache = diskcache.Cache(value)
+        else:
+            self._cache = None
+
+    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         task_results: list[TaskResult] = []
         for prompt in prompts:
@@ -86,7 +94,7 @@ class LMClient:
         return task_results
 
     @asyncer.runnify
-    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult]:
+    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -129,8 +137,8 @@ class LMClient:
 
                 try:
                     response = await self.model.async_chat(prompt=prompt, **kwargs)
-                    if self.cache is not None:
-                        self.cache[task_key] = response
+                    if self._cache is not None:
+                        self._cache[task_key] = response
                 except BaseException as e:
                     if self.error_mode is ErrorMode.RAISE:
                         raise
@@ -165,8 +173,8 @@ class LMClient:
 
             try:
                 response = self.model.chat(prompt=prompt, **kwargs)
-                if self.cache is not None:
-                    self.cache[task_key] = response
+                if self._cache is not None:
+                    self._cache[task_key] = response
             except BaseException as e:
                 if self.error_mode is ErrorMode.RAISE:
                     raise
@@ -190,8 +198,8 @@ class LMClient:
         return result
 
     def read_from_cache(self, key: str) -> ModelResponse | None:
-        if self.cache is not None and key in self.cache:
-            response = self.cache[key]
+        if self._cache is not None and key in self._cache:
+            response = self._cache[key]
             response = cast(ModelResponse, response)
             return response
         return
@@ -212,7 +220,7 @@ class LMClient:
 
     def _gen_task_key(self, prompt: str | Messages, **kwargs) -> str:
         if not isinstance(prompt, str):
-            prompt = '---'.join([f'{message["role"]}={message["content"]}' for message in prompt])
+            prompt = '---'.join([f'{k}={v}' for message in prompt for k, v in message.items()])
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
         items += [f'__cache_version__={__cache_version__}']
         items = [prompt, self.model.identifier] + items

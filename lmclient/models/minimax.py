@@ -24,7 +24,7 @@ class MinimaxChat(BaseChatModel):
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
         self.timeout = timeout
-    
+
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
         if isinstance(prompt, str):

@@ -34,7 +34,7 @@ def main(
     else:
         model = OpenAIChat(model_name)
 
-    client = LMClient(
+    client = LMClient[str](
         model,
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,

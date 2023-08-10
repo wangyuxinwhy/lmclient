@@ -1,8 +1,10 @@
-from typing import Any, Protocol
+from typing import Any, Generic, Protocol, TypeVar
 
 from lmclient.types import ModelResponse
 
+T = TypeVar('T', covariant=True)
 
-class ModelResponseParser(Protocol):
-    def __call__(self, response: ModelResponse) -> Any:
+
+class ModelResponseParser(Protocol, Generic[T]):
+    def __call__(self, response: ModelResponse) -> T:
         ...
