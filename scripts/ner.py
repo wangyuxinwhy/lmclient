@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import typer
+from pydantic import Field
 
-from lmclient import AzureChat, LMClient, OpenAIChat
+from lmclient import AzureChat, LMClientForStructuredData, OpenAIChat, OpenAISchema
 from lmclient.client import ErrorMode
-from lmclient.parsers.openai import OpenAISchema
 
 
 class ModelType(str, Enum):
@@ -18,9 +18,9 @@ class ModelType(str, Enum):
 
 
 class NerInfo(OpenAISchema):
-    person: Optional[List[str]] = None
-    location: Optional[List[str]] = None
-    organization: Optional[List[str]] = None
+    person: List[str] = Field(default_factory=list)
+    location: List[str] = Field(default_factory=list)
+    organization: List[str] = Field(default_factory=list)
 
 
 def read_from_jsonl(file: str | Path):
@@ -49,27 +49,19 @@ def main(
     else:
         model = OpenAIChat('gpt-3.5-turbo')
 
-    client = LMClient(
+    client = LMClientForStructuredData(
         model,
+        schema=NerInfo,
+        system_prompt='You are a NER model, extract entity information from the text.',
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,
         error_mode=error_mode,
-        output_parser=NerInfo.from_response,
     )
     if not cache:
         client.cache_dir = None
 
     texts = read_from_jsonl(input_josnl_file)
-    prompts = []
-    for text in texts:
-        system_prompt = f'You are a NER model, extract entity information from the text.'
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': text},
-        ]
-        prompts.append(messages)
-    schema = NerInfo.openai_schema()
-    results = client.async_run(prompts, functions=[schema], function_call='auto')
+    results = client.async_run(texts)
     with open(output_file, 'w') as f:
         for text, result in zip(texts, results):
             if result.output is None:

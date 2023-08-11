@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Generic, Type, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ from lmclient.types import ModelResponse
 T = TypeVar('T', bound='OpenAISchema')
 
 
-class OpenAIParser(ModelResponseParser[str | dict[str, str]]):
+class OpenAIParser(ModelResponseParser):
     def __call__(self, response: ModelResponse) -> str | dict[str, str]:
         try:
             if self.is_function_call(response):
@@ -30,7 +30,7 @@ class OpenAIParser(ModelResponseParser[str | dict[str, str]]):
         return bool(message.get('function_call'))
 
 
-class OpenAIFunctionCallParser(ModelResponseParser[dict[str, str]]):
+class OpenAIFunctionCallParser(ModelResponseParser):
     def __call__(self, response: ModelResponse) -> dict[str, str]:
         try:
             output: dict[str, str] = response['choices'][0]['message']['function_call']
@@ -39,7 +39,7 @@ class OpenAIFunctionCallParser(ModelResponseParser[dict[str, str]]):
         return output
 
 
-class OpenAIContentParser(ModelResponseParser[str]):
+class OpenAIContentParser(ModelResponseParser):
     def __call__(self, response: ModelResponse) -> str:
         try:
             output: str = response['choices'][0]['message']['content']

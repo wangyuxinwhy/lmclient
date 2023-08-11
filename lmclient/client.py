@@ -12,8 +12,8 @@ import asyncer
 import diskcache
 import tqdm
 
-from lmclient.models import BaseChatModel
-from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser
+from lmclient.models import AzureChat, BaseChatModel, OpenAIChat
+from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser, OpenAISchema
 from lmclient.types import Messages, ModelResponse, TaskResult
 from lmclient.version import __cache_version__
 
@@ -25,6 +25,7 @@ DEFAULT_MODEL_PARSER_MAP: dict[str, Type[ModelResponseParser]] = {
 }
 
 T = TypeVar('T')
+T_O = TypeVar('T_O', bound=OpenAISchema)
 
 
 class ErrorMode(str, Enum):
@@ -93,8 +94,7 @@ class LMClient(Generic[T]):
         progress_bar.close()
         return task_results
 
-    @asyncer.runnify
-    async def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
+    async def _async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -115,6 +115,9 @@ class LMClient(Generic[T]):
         progress_bar.close()
         values = [soon_value.value for soon_value in soon_values]
         return values
+
+    def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
+        return asyncer.runnify(self._async_run)(prompts, **kwargs)
 
     async def _async_run_single_task(
         self,
@@ -237,3 +240,61 @@ class LMClient(Generic[T]):
         )
         progress_bar = tqdm.tqdm(desc=f'{self.model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar)
         return progress_bar
+
+
+class LMClientForStructuredData(LMClient[T_O]):
+    SupportedModels = [OpenAIChat, AzureChat]
+
+    def __init__(
+        self,
+        model: BaseChatModel,
+        schema: Type[T_O],
+        system_prompt: str = 'Generate structured data from a given text',
+        max_requests_per_minute: int = 20,
+        async_capacity: int = 3,
+        timeout: int | None = None,
+        error_mode: ErrorMode | str = ErrorMode.RAISE,
+        cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
+        progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
+    ):
+        if not any([isinstance(model, supported_model) for supported_model in self.SupportedModels]):
+            raise ValueError(f'Unsupported model: {model.__class__.__name__}. Supported models: {self.SupportedModels}')
+        self.system_prompt = system_prompt
+        self.default_kwargs = {
+            'functions': [schema.openai_schema()],
+            'function_call': {'name': schema.openai_schema()['name']},
+        }
+
+        super().__init__(
+            model=model,
+            max_requests_per_minute=max_requests_per_minute,
+            async_capacity=async_capacity,
+            timeout=timeout,
+            error_mode=error_mode,
+            cache_dir=cache_dir,
+            progress_bar=progress_bar,
+            output_parser=schema.from_response,
+        )
+
+    def run(self, prompts: Sequence[str], **kwargs) -> list[TaskResult[T_O]]:
+        assembled_prompts = []
+        for prompt in prompts:
+            messages = [
+                {'role': 'system', 'text': self.system_prompt},
+                {'role': 'user', 'text': prompt},
+            ]
+            assembled_prompts.append(messages)
+        kwargs = {**self.default_kwargs, **kwargs}
+        print(kwargs)
+        return super().run(prompts, **kwargs)
+
+    async def _async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T_O]]:
+        assembled_prompts = []
+        for prompt in prompts:
+            messages = [
+                {'role': 'system', 'text': self.system_prompt},
+                {'role': 'user', 'text': prompt},
+            ]
+            assembled_prompts.append(messages)
+        kwargs = {**self.default_kwargs, **kwargs}
+        return await super()._async_run(prompts, **kwargs)
