@@ -1,2 +1,2 @@
-__version__ = '0.4.0'
-__cache_version__ = '2'
+__version__ = '0.4.1'
+__cache_version__ = '3'

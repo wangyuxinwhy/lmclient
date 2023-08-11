@@ -44,9 +44,7 @@ def test_sync_completion():
 
 def test_async_completion():
     completion_model = TestModel()
-    client = LMClient(
-        completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None, output_parser=model_parser
-    )
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None, output_parser=model_parser)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
@@ -80,4 +78,4 @@ def test_async_completion_with_cache(tmp_path):
     assert results[3].response['content'] == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time < 2
-    assert len(list(client.cache)) == 3  # type: ignore
+    assert len(list(client._cache)) == 3  # type: ignore

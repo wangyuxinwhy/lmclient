@@ -52,10 +52,10 @@ print(values)
 
 ### 执行脚本
 
-通过如下命令执行翻译脚本，此脚本将会把 `input.jsonl` 文件中每一行翻译成中文，并且输出到 `output.jsonl` 文件中。当然，在实际使用时，您需要指定成自己的输入文件，格式相同就可以了。
+通过如下命令执行翻译脚本，此脚本将会把 `translate_input.jsonl` 文件中每一行翻译成中文，并且输出到 `output.jsonl` 文件中。当然，在实际使用时，您需要指定成自己的输入文件，格式相同就可以了。
 
 ```shell
-python translate.py data/input.jsonl data/output.jsonl
+python translate.py data/input.jsonl output.jsonl
 ```
 
 #### input.jsonl
@@ -79,19 +79,19 @@ python translate.py data/input.jsonl data/output.jsonl
 ```python
 # 核心代码
 client = LMClient(
-    model,
-    max_requests_per_minute=max_requests_per_minute,
-    async_capacity=async_capacity,
-    error_mode=error_mode,
-    cache_dir=cache_dir,
-)
+        model,
+        max_requests_per_minute=max_requests_per_minute,
+        async_capacity=async_capacity,
+        error_mode=error_mode,
+        cache_dir=cache_dir,
+    )
 
 texts = read_from_jsonl(input_josnl_file)
 prompts = []
 for text in texts:
     prompt = f'translate following sentece to chinese\nsentence: {text}\ntranslation: '
     prompts.append(prompt)
-completions = client.async_run(prompts)
+results = client.async_run(prompts)
 ```
 
 ## 使用样例： self-instruct
@@ -108,5 +108,5 @@ TODO: 待补充 self-instruct 脚本
 
 from lmclient import LMClient, OpenAIChat
 model = OpenAIChat('gpt-3.5-turbo')
-client = LMClient(model, max_requests_per_minute=20, async_capacity=5, cache_dir='openai_cache', error_mode='ignore')
+client = LMClient(model, max_requests_per_minute=20, async_capacity=5, cache_dir='openai_cache', error_mode='ignore', timeout=20)
 ```

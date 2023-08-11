@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, Sequence, TypedDict
+from typing import Any, Dict, Generic, Optional, Sequence, TypedDict, TypeVar
 
+from pydantic import BaseModel, Field
 from typing_extensions import NotRequired
+
+T = TypeVar('T')
 
 
 class Message(TypedDict):
@@ -17,8 +19,7 @@ Messages = Sequence[Message]
 ModelResponse = Dict[str, Any]
 
 
-@dataclass
-class TaskResult:
-    response: ModelResponse = field(default_factory=dict)
-    output: Any = None
-    error_message: str | None = None
+class TaskResult(BaseModel, Generic[T]):
+    output: Optional[T] = None
+    response: ModelResponse = Field(default_factory=dict)
+    error_message: Optional[str] = None
