@@ -285,7 +285,6 @@ class LMClientForStructuredData(LMClient[T_O]):
             ]
             assembled_prompts.append(messages)
         kwargs = {**self.default_kwargs, **kwargs}
-        print(kwargs)
         return super().run(prompts, **kwargs)
 
     async def _async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T_O]]:
