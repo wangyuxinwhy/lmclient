@@ -8,7 +8,8 @@ from openai.openai_object import OpenAIObject
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from lmclient.models.base import BaseChatModel
-from lmclient.types import Message, Messages, ModelResponse
+from lmclient.types import ModelResponse, Prompt
+from lmclient.utils import ensure_messages
 
 
 class AzureChat(BaseChatModel):
@@ -30,24 +31,22 @@ class AzureChat(BaseChatModel):
         self.timeout = timeout
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
-    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
+    def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
+        messages = ensure_messages(prompt)
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
-        response = openai.ChatCompletion.create(engine=self.engine, messages=prompt, **kwargs)
+        response = openai.ChatCompletion.create(engine=self.engine, messages=messages, **kwargs)
         response = cast(OpenAIObject, response)
         return response.to_dict_recursive()
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
+    async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
+        messages = ensure_messages(prompt)
         if self.timeout:
             kwargs['request_timeout'] = self.timeout
 
-        response = await openai.ChatCompletion.acreate(engine=self.engine, messages=prompt, **kwargs)
+        response = await openai.ChatCompletion.acreate(engine=self.engine, messages=messages, **kwargs)
         response = cast(OpenAIObject, response)
         return response.to_dict_recursive()
 

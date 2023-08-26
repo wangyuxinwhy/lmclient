@@ -14,7 +14,8 @@ import tqdm
 
 from lmclient.models import AzureChat, BaseChatModel, OpenAIChat
 from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser, OpenAISchema
-from lmclient.types import Messages, ModelResponse, TaskResult
+from lmclient.types import ModelResponse, Prompt, TaskResult
+from lmclient.utils import ensure_messages
 from lmclient.version import __cache_version__
 
 DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
@@ -85,7 +86,7 @@ class LMClient(Generic[T]):
         else:
             self._cache = None
 
-    def run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
+    def run(self, prompts: Sequence[Prompt], **kwargs) -> list[TaskResult[T]]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         task_results: list[TaskResult] = []
         for prompt in prompts:
@@ -94,7 +95,7 @@ class LMClient(Generic[T]):
         progress_bar.close()
         return task_results
 
-    async def _async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
+    async def _async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[TaskResult[T]]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -116,12 +117,12 @@ class LMClient(Generic[T]):
         values = [soon_value.value for soon_value in soon_values]
         return values
 
-    def async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T]]:
+    def async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[TaskResult[T]]:
         return asyncer.runnify(self._async_run)(prompts, **kwargs)
 
     async def _async_run_single_task(
         self,
-        prompt: str | Messages,
+        prompt: Prompt,
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm,
@@ -164,7 +165,7 @@ class LMClient(Generic[T]):
             progress_bar.update(1)
             return result
 
-    def _run_single_task(self, prompt: str | Messages, progress_bar: tqdm.tqdm, **kwargs) -> TaskResult:
+    def _run_single_task(self, prompt: Prompt, progress_bar: tqdm.tqdm, **kwargs) -> TaskResult:
         task_key = self._gen_task_key(prompt=prompt, **kwargs)
 
         response = self.read_from_cache(task_key)
@@ -221,12 +222,15 @@ class LMClient(Generic[T]):
         else:
             return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
 
-    def _gen_task_key(self, prompt: str | Messages, **kwargs) -> str:
+    def _gen_task_key(self, prompt: Prompt, **kwargs) -> str:
+        messages = ensure_messages(prompt)
         if not isinstance(prompt, str):
-            prompt = '---'.join([f'{k}={v}' for message in prompt for k, v in message.items()])
+            hash_text = '---'.join([f'{k}={v}' for message in messages for k, v in message.items()])
+        else:
+            hash_text = prompt
         items = sorted([f'{key}={value}' for key, value in kwargs.items()])
         items += [f'__cache_version__={__cache_version__}']
-        items = [prompt, self.model.identifier] + items
+        items = [hash_text, self.model.identifier] + items
         task_string = '---'.join(items)
         return self.md5_hash(task_string)
 
@@ -287,7 +291,7 @@ class LMClientForStructuredData(LMClient[T_O]):
         kwargs = {**self.default_kwargs, **kwargs}
         return super().run(prompts, **kwargs)
 
-    async def _async_run(self, prompts: Sequence[str | Messages], **kwargs) -> list[TaskResult[T_O]]:
+    async def _async_run(self, prompts: Sequence[str], **kwargs) -> list[TaskResult[T_O]]:
         assembled_prompts = []
         for prompt in prompts:
             messages = [
