@@ -3,8 +3,8 @@ from lmclient.client import LMClientForStructuredData as LMClientForStructuredDa
 from lmclient.models import AzureChat as AzureChat
 from lmclient.models import MinimaxChat as MinimaxChat
 from lmclient.models import OpenAIChat as OpenAIChat
-from lmclient.parsers import *
-from lmclient.version import __cache_version__, __version__
+from lmclient.models import ZhiPuChat as ZhiPuChat
+from lmclient.parsers import *  # noqa: F403
 
 AzureCompletion = AzureChat
 OpenAICompletion = OpenAIChat

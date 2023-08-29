@@ -28,7 +28,7 @@ def model_parser(response):
 
 def test_sync_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model, output_parser=model_parser)
+    client = LMClient(completion_model, output_parser=model_parser, cache_dir=None)
 
     messages = [
         {'role': 'system', 'content': 'your are lmclient demo assistant'},

@@ -13,7 +13,7 @@ import diskcache
 import tqdm
 
 from lmclient.models import AzureChat, BaseChatModel, OpenAIChat
-from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser, OpenAISchema
+from lmclient.parsers import MinimaxTextParser, ModelResponseParser, OpenAIParser, OpenAISchema, ZhiPuParser
 from lmclient.types import ModelResponse, Prompt, TaskResult
 from lmclient.utils import ensure_messages
 from lmclient.version import __cache_version__
@@ -23,6 +23,7 @@ DEFAULT_MODEL_PARSER_MAP: dict[str, Type[ModelResponseParser]] = {
     'OpenAIChat': OpenAIParser,
     'AzureChat': OpenAIParser,
     'MinimaxChat': MinimaxTextParser,
+    'ZhiPuChat': ZhiPuParser,
 }
 
 T = TypeVar('T')
@@ -42,6 +43,7 @@ class ProgressBarMode(str, Enum):
 
 class LMClient(Generic[T]):
     error_mode: ErrorMode
+    _cache_dir: Path | None
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
@@ -50,10 +52,10 @@ class LMClient(Generic[T]):
         model: BaseChatModel,
         max_requests_per_minute: int = 20,
         async_capacity: int = 3,
-        timeout: int | None = None,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
+        max_retry_attempt: int | None = None,
         output_parser: ModelResponseParser[T] | None = None,
     ):
         self.model = model
@@ -61,20 +63,15 @@ class LMClient(Generic[T]):
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
         self.progress_bar_mode = ProgressBarMode(progress_bar)
+        self.max_retry_attempt = max_retry_attempt
         self._task_created_time_list: list[int] = []
 
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.output_parser = output_parser or DEFAULT_MODEL_PARSER_MAP[self.model.__class__.__name__]()
 
-        if timeout is not None:
-            if hasattr(self.model, 'timeout'):
-                setattr(self.model, 'timeout', timeout)
-            else:
-                raise ValueError(f'Model {self.model} does not support timeout')
-
     @property
     def cache_dir(self) -> Path | None:
-        return getattr(self, '_cache_dir')
+        return self._cache_dir
 
     @cache_dir.setter
     def cache_dir(self, value: Path | None) -> None:
@@ -140,7 +137,12 @@ class LMClient(Generic[T]):
                     self._task_created_time_list.append(int(time.time()))
 
                 try:
-                    response = await self.model.async_chat(prompt=prompt, **kwargs)
+                    if self.max_retry_attempt is None:
+                        response = await self.model.async_chat(prompt=prompt, **kwargs)
+                    else:
+                        response = await self.model.async_chat_with_retry(
+                            prompt=prompt, max_attempt=self.max_retry_attempt, **kwargs
+                        )
                     if self._cache is not None:
                         self._cache[task_key] = response
                 except BaseException as e:
@@ -149,7 +151,7 @@ class LMClient(Generic[T]):
                     elif self.error_mode is ErrorMode.IGNORE:
                         return TaskResult(error_message=str(e))
                     else:
-                        raise ValueError(f'Unknown error mode: {self.error_mode}')
+                        raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
             try:
                 output = self.output_parser(response)
@@ -160,7 +162,7 @@ class LMClient(Generic[T]):
                 elif self.error_mode is ErrorMode.IGNORE:
                     result = TaskResult(error_message=str(e), response=response)
                 else:
-                    raise ValueError(f'Unknown error mode: {self.error_mode}')
+                    raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
             progress_bar.update(1)
             return result
@@ -176,7 +178,10 @@ class LMClient(Generic[T]):
             self._task_created_time_list.append(int(time.time()))
 
             try:
-                response = self.model.chat(prompt=prompt, **kwargs)
+                if self.max_retry_attempt is None:
+                    response = self.model.chat(prompt=prompt, **kwargs)
+                else:
+                    response = self.model.chat_with_retry(prompt=prompt, max_retry_attempt=self.max_retry_attempt, **kwargs)
                 if self._cache is not None:
                     self._cache[task_key] = response
             except BaseException as e:
@@ -185,7 +190,7 @@ class LMClient(Generic[T]):
                 elif self.error_mode is ErrorMode.IGNORE:
                     return TaskResult(error_message=str(e))
                 else:
-                    raise ValueError(f'Unknown error mode: {self.error_mode}')
+                    raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
         try:
             output = self.output_parser(response)
@@ -196,7 +201,7 @@ class LMClient(Generic[T]):
             elif self.error_mode is ErrorMode.IGNORE:
                 result = TaskResult(error_message=str(e), response=response)
             else:
-                raise ValueError(f'Unknown error mode: {self.error_mode}')
+                raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
         progress_bar.update(1)
         return result
@@ -256,12 +261,12 @@ class LMClientForStructuredData(LMClient[T_O]):
         system_prompt: str = 'Generate structured data from a given text',
         max_requests_per_minute: int = 20,
         async_capacity: int = 3,
-        timeout: int | None = None,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
+        max_retry_attempt: int | None = None,
     ):
-        if not any([isinstance(model, supported_model) for supported_model in self.SupportedModels]):
+        if not any(isinstance(model, supported_model) for supported_model in self.SupportedModels):
             raise ValueError(f'Unsupported model: {model.__class__.__name__}. Supported models: {self.SupportedModels}')
         self.system_prompt = system_prompt
         self.default_kwargs = {
@@ -273,11 +278,11 @@ class LMClientForStructuredData(LMClient[T_O]):
             model=model,
             max_requests_per_minute=max_requests_per_minute,
             async_capacity=async_capacity,
-            timeout=timeout,
             error_mode=error_mode,
             cache_dir=cache_dir,
             progress_bar=progress_bar,
             output_parser=schema.from_response,
+            max_retry_attempt=max_retry_attempt,
         )
 
     def run(self, prompts: Sequence[str], **kwargs) -> list[TaskResult[T_O]]:
