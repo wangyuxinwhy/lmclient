@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 import requests
-from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from lmclient.models.base import BaseChatModel
 from lmclient.types import Messages, ModelResponse, Prompt
@@ -15,18 +14,16 @@ from lmclient.utils import ensure_messages
 class MinimaxChat(BaseChatModel):
     def __init__(
         self,
-        model_name: str,
+        model_name: str = 'abab5.5-chat',
         group_id: str | None = None,
         api_key: str | None = None,
         timeout: int | None = 60,
     ):
         self.model_name = model_name
-
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
         self.timeout = timeout
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
         messages = ensure_messages(prompt)
 
@@ -46,7 +43,6 @@ class MinimaxChat(BaseChatModel):
         ).json()
         return response
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
     async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
         messages = ensure_messages(prompt)
 
