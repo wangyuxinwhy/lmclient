@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from typing import TypeVar
 
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+    from pydantic.v1 import Field as Field
+except ImportError:
+    from pydantic import BaseModel
+    from pydantic import Field as Field
 
 from lmclient.exceptions import ParserError
 from lmclient.parsers.base import ModelResponseParser
@@ -59,7 +64,7 @@ def _remove_a_key(d, remove_key) -> None:
                 _remove_a_key(d[key], remove_key)
 
 
-class OpenAISchema(BaseModel):
+class OpenAISchema(BaseModel):  # type: ignore
     @classmethod
     def openai_schema(cls):
         """
@@ -71,7 +76,7 @@ class OpenAISchema(BaseModel):
         Returns:
             model_json_schema (dict): A dictionary in the format of OpenAI's schema as jsonschema
         """
-        schema = cls.model_json_schema()
+        schema = cls.schema()
         parameters = {k: v for k, v in schema.items() if k not in ('title', 'description')}
         parameters['required'] = sorted(parameters['properties'])
         _remove_a_key(parameters, 'title')
