@@ -8,7 +8,8 @@ import requests
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from lmclient.models.base import BaseChatModel
-from lmclient.types import Message, Messages, ModelResponse
+from lmclient.types import Messages, ModelResponse, Prompt
+from lmclient.utils import ensure_messages
 
 
 class MinimaxChat(BaseChatModel):
@@ -26,15 +27,14 @@ class MinimaxChat(BaseChatModel):
         self.timeout = timeout
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
-    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
+    def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
+        messages = ensure_messages(prompt)
 
         headers = {
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json',
         }
-        json_data = self._messages_to_request_json_data(prompt)
+        json_data = self._messages_to_request_json_data(messages)
         if 'temperature' in kwargs:
             kwargs['temperature'] = max(0.01, kwargs['temperature'])
         json_data.update(kwargs)
@@ -47,16 +47,15 @@ class MinimaxChat(BaseChatModel):
         return response
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
+    async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
+        messages = ensure_messages(prompt)
 
         async with httpx.AsyncClient() as client:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json',
             }
-            json_data = self._messages_to_request_json_data(prompt)
+            json_data = self._messages_to_request_json_data(messages)
             if 'temperature' in kwargs:
                 kwargs['temperature'] = max(0.01, kwargs['temperature'])
             json_data.update(kwargs)

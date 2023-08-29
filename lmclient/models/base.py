@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from lmclient.types import Messages, ModelResponse
+from lmclient.types import ModelResponse, Prompt
 
 
 class BaseChatModel:
-    def chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
+    def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
         ...
 
-    async def async_chat(self, prompt: Messages | str, **kwargs) -> ModelResponse:
+    async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
         ...
 
     @property

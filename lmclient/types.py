@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, Optional, Sequence, TypedDict, TypeVar
+from typing import Any, Dict, Generic, Optional, Sequence, TypedDict, TypeVar, Union
 
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired
@@ -15,8 +15,11 @@ class Message(TypedDict):
     function_call: NotRequired[str]
 
 
+MessageRequiredKeys = ('role', 'content')
+MessageNotRequiredKeys = ('name', 'function')
 Messages = Sequence[Message]
 ModelResponse = Dict[str, Any]
+Prompt = Union[str, Sequence[dict]]
 
 
 class TaskResult(BaseModel, Generic[T]):
