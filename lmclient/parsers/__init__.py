@@ -1,6 +1,6 @@
 from lmclient.parsers.base import ModelResponseParser
 from lmclient.parsers.minimax import MinimaxTextParser
-from lmclient.parsers.openai import OpenAIContentParser, OpenAIFunctionCallParser, OpenAIParser, OpenAISchema
+from lmclient.parsers.openai import Field, OpenAIContentParser, OpenAIFunctionCallParser, OpenAIParser, OpenAISchema
 from lmclient.parsers.zhipu import ZhiPuParser
 
 __all__ = [
@@ -11,4 +11,5 @@ __all__ = [
     'OpenAIFunctionCallParser',
     'OpenAIParser',
     'OpenAISchema',
+    'Field',
 ]

@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import List
 
 import typer
-from pydantic import Field
 
-from lmclient import AzureChat, LMClientForStructuredData, OpenAIChat, OpenAISchema
+from lmclient import AzureChat, Field, LMClientForStructuredData, OpenAIChat, OpenAISchema
 from lmclient.client import ErrorMode
 
 
@@ -18,6 +17,8 @@ class ModelType(str, Enum):
 
 
 class NerInfo(OpenAISchema):
+    """命名实体信息，包括人名，地名和组织名"""
+
     person: List[str] = Field(default_factory=list)
     location: List[str] = Field(default_factory=list)
     organization: List[str] = Field(default_factory=list)
@@ -67,7 +68,10 @@ def main(
             if result.output is None:
                 output = None
             else:
-                output = result.output.model_dump()
+                try:
+                    output = result.output.model_dump()
+                except AttributeError:
+                    output = result.output.dict()
             output_dict = {'text': text, 'output': output}
             f.write(json.dumps(output_dict, ensure_ascii=False) + '\n')
 

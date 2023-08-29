@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Generic, Optional, Sequence, TypedDict, TypeVar, Union
 
-from pydantic import BaseModel, Field
+try:
+    from pydantic.v1 import BaseModel, Field
+except ImportError:
+    from pydantic import BaseModel, Field
+
 from typing_extensions import NotRequired
 
 T = TypeVar('T')
@@ -22,7 +26,7 @@ ModelResponse = Dict[str, Any]
 Prompt = Union[str, Sequence[dict]]
 
 
-class TaskResult(BaseModel, Generic[T]):
+class TaskResult(BaseModel, Generic[T]):  # type: ignore
     output: Optional[T] = None
     response: ModelResponse = Field(default_factory=dict)
     error_message: Optional[str] = None
