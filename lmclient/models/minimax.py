@@ -4,7 +4,6 @@ import os
 from typing import Any
 
 import httpx
-import requests
 
 from lmclient.models.base import BaseChatModel
 from lmclient.types import Messages, ModelResponse, Prompt
@@ -35,7 +34,7 @@ class MinimaxChat(BaseChatModel):
         if 'temperature' in kwargs:
             kwargs['temperature'] = max(0.01, kwargs['temperature'])
         json_data.update(kwargs)
-        response = requests.post(
+        response = httpx.post(
             f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
             json=json_data,
             headers=headers,
