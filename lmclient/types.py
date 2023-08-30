@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, Optional, Sequence, TypedDict, TypeVar, Union
+from typing import Any, Dict, Generic, Sequence, TypedDict, TypeVar, Union
 
 try:
     from pydantic.v1 import BaseModel, Field
@@ -27,5 +27,5 @@ Prompt = Union[str, Sequence[dict]]
 
 
 class ChatModelOutput(BaseModel, Generic[T]):  # type: ignore
-    parsed_result: Optional[T] = None
+    parsed_result: T
     response: ModelResponse = Field(default_factory=dict)
