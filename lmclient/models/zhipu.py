@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
+from typing import Any, TypeVar
 
 import cachetools.func  # type: ignore
-import httpx
 import jwt
 
-from lmclient.models.base import BaseChatModel
-from lmclient.types import ModelResponse, Prompt
-from lmclient.utils import ensure_messages
+from lmclient.models.base import HttpChatModel, RetryStrategy
+from lmclient.parser import ModelResponseParser, ParserError
+from lmclient.types import Messages, ModelResponse
 
+T = TypeVar('T')
 API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
 
@@ -36,53 +38,48 @@ def generate_token(api_key: str):
     )
 
 
-class ZhiPuChat(BaseChatModel):
+class ZhiPuParser(ModelResponseParser):
+    def __call__(self, response: ModelResponse) -> str:
+        try:
+            output = response['data']['choices'][0]['content'].strip('"').strip()
+        except (KeyError, IndexError) as e:
+            raise ParserError(f'Parse response failed, reponse: {response}') from e
+        return output
+
+
+class ZhiPuChat(HttpChatModel[T]):
     def __init__(
-        self, model_name: str = 'chatglm_pro', api_base: str | None = None, api_key: str | None = None, timeout: int | None = 60
+        self,
+        model: str = 'chatglm_pro',
+        api_base: str | None = None,
+        api_key: str | None = None,
+        timeout: int | None = 60,
+        response_parser: ModelResponseParser[T] | None = None,
+        retry: bool | RetryStrategy = False,
+        use_cache: Path | str | bool = False,
     ) -> None:
-        self.model_name = model_name
+        response_parser = response_parser or ZhiPuParser()
+        super().__init__(timeout=timeout, response_parser=response_parser, retry=retry, use_cache=use_cache)
+        self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
-        self.timeout = timeout
         self.api_base = api_base or os.getenv('ZHIPU_API_BASE') or 'https://open.bigmodel.cn/api/paas/v3/model-api'
         self.api_base.rstrip('/')
 
-    def chat(
-        self, prompt: Prompt, temperature: float | None = None, top_p: float | None = None, request_id: str | None = None
-    ) -> ModelResponse:
-        messages = ensure_messages(prompt)
+    def get_post_parameters(self, messages: Messages, **kwargs) -> dict[str, Any]:
+        for message in messages:
+            if message['role'] not in ('user', 'assistant'):
+                raise ValueError(f'Role of message must be user or assistant, but got {message["role"]}')
 
         headers = {
             'Authorization': generate_token(self.api_key),
         }
-        params = {'prompt': messages, 'temperature': temperature, 'top_p': top_p, 'request_id': request_id}
-        reponse = httpx.post(
-            url=f'{self.api_base}/{self.model_name}/invoke',
-            headers=headers,
-            json=params,
-            timeout=self.timeout,
-        )
-        reponse.raise_for_status()
-        return reponse.json()
-
-    async def async_chat(
-        self, prompt: Prompt, temperature: float | None = None, top_p: float | None = None, request_id: str | None = None
-    ) -> ModelResponse:
-        messages = ensure_messages(prompt)
-
-        headers = {
-            'Authorization': generate_token(self.api_key),
+        params = {'prompt': messages, **kwargs}
+        return {
+            'url': f'{self.api_base}/{self.model}/invoke',
+            'headers': headers,
+            'json': params,
         }
-        params = {'prompt': messages, 'temperature': temperature, 'top_p': top_p, 'request_id': request_id}
-        async with httpx.AsyncClient() as client:
-            reponse = await client.post(
-                url=f'{self.api_base}/{self.model_name}/invoke',
-                headers=headers,
-                json=params,
-                timeout=self.timeout,
-            )
-        reponse.raise_for_status()
-        return reponse.json()
 
     @property
     def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model_name})'
+        return f'{self.__class__.__name__}({self.model})'
