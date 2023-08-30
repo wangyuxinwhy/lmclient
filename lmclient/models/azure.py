@@ -1,68 +1,51 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import Any, TypeVar
 
-import httpx
+from lmclient.models.base import HttpChatModel, RetryStrategy
+from lmclient.models.openai import OpenAIContentParser
+from lmclient.parser import ModelResponseParser
+from lmclient.types import Messages
 
-from lmclient.models.base import BaseChatModel
-from lmclient.types import ModelResponse, Prompt
-from lmclient.utils import ensure_messages
+T = TypeVar('T')
 
 
-class AzureChat(BaseChatModel):
+class AzureChat(HttpChatModel[T]):
     def __init__(
         self,
-        model_name: str | None = None,
+        model: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         api_version: str | None = None,
         timeout: int | None = 60,
+        response_parser: ModelResponseParser[T] | None = None,
+        retry: bool | RetryStrategy = False,
+        use_cache: Path | str | bool = False,
     ):
-        self.model_name = model_name or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
+        response_parser = response_parser or OpenAIContentParser()
+        super().__init__(timeout=timeout, response_parser=response_parser, retry=retry, use_cache=use_cache)
+        self.model = model or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
         self.api_key = api_key or os.environ['AZURE_API_KEY']
         self.api_base = api_base or os.environ['AZURE_API_BASE']
         self.api_version = api_version or os.getenv('AZURE_API_VERSION')
-        self.timeout = timeout
 
-    def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
-        messages = ensure_messages(prompt)
+    def get_post_parameters(self, messages: Messages, **kwargs) -> dict[str, Any]:
         headers = {
             'api-key': self.api_key,
         }
         params = {
-            'model': self.model_name,
+            'model': self.model,
             'messages': messages,
             **kwargs,
         }
-        response = httpx.post(
-            url=f'{self.api_base}/openai/deployments/{self.model_name}/chat/completions?api-version={self.api_version}',
-            headers=headers,
-            json=params,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        return response.json()
-
-    async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
-        messages = ensure_messages(prompt)
-        headers = {
-            'api-key': self.api_key,
+        return {
+            'url': f'{self.api_base}/openai/deployments/{self.model}/chat/completions?api-version={self.api_version}',
+            'headers': headers,
+            'json': params,
         }
-        params = {
-            'model': self.model_name,
-            'messages': messages,
-            **kwargs,
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url=f'{self.api_base}/openai/deployments/{self.model_name}/chat/completions?api-version={self.api_version}',
-                headers=headers,
-                json=params,
-                timeout=self.timeout,
-            )
-        response.raise_for_status()
-        return response.json()
 
     @property
     def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model_name})'
+        return f'{self.__class__.__name__}({self.model})'

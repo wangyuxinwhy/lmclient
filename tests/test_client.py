@@ -8,18 +8,22 @@ from lmclient.types import Messages, ModelResponse
 
 
 class TestModel(BaseChatModel):
-    def chat(self, prompt: str | Messages, **kwargs) -> ModelResponse:
+    def call_model(self, messages: Messages, **kwargs) -> ModelResponse:
         return {
-            'content': f'Completed: {prompt}',
+            'content': f'Completed: {messages[-1]["content"]}',
         }
 
-    async def async_chat(self, prompt: str | Messages, **kwargs) -> ModelResponse:
+    async def async_call_model(self, messages: Messages, **kwargs) -> ModelResponse:
         return {
-            'content': f'Completed: {prompt}',
+            'content': f'Completed: {messages[-1]["content"]}',
         }
 
     def default_postprocess_function(self, response: ModelResponse) -> str:
         return response['content']
+
+    @property
+    def identifier(self) -> str:
+        return 'TestModel'
 
 
 def model_parser(response):
@@ -27,24 +31,26 @@ def model_parser(response):
 
 
 def test_sync_completion():
-    completion_model = TestModel()
-    client = LMClient(completion_model, output_parser=model_parser, cache_dir=None)
-
-    messages = [
-        {'role': 'system', 'content': 'your are lmclient demo assistant'},
-        {'role': 'user', 'content': 'hello, who are you?'},
+    completion_model = TestModel(response_parser=model_parser, use_cache=False)
+    client = LMClient(completion_model)
+    prompts = [
+        'Hello, my name is',
+        [
+            {'role': 'system', 'content': 'your are lmclient demo assistant'},
+            {'role': 'user', 'content': 'hello, who are you?'},
+        ],
     ]
-    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball', messages]
     results = client.run(prompts)
 
-    assert isinstance(results[0].output, str)
-    assert results[0].output == 'Completed: Hello, my name is'
+    assert isinstance(results[0].parsed_result, str)
+    assert results[0].parsed_result == 'Completed: Hello, my name is'
+    assert results[1].parsed_result == 'Completed: hello, who are you?'
     assert len(results) == len(prompts)
 
 
 def test_async_completion():
-    completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=None, output_parser=model_parser)
+    completion_model = TestModel(response_parser=model_parser, use_cache=False)
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
@@ -57,16 +63,14 @@ def test_async_completion():
     elapsed_time = time.perf_counter() - start_time
 
     assert results[0].response['content'] == 'Completed: Hello, my name is'
-    assert results[0].output == 'Completed: Hello, my name is'
+    assert results[0].parsed_result == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time > 4
 
 
 def test_async_completion_with_cache(tmp_path):
-    completion_model = TestModel()
-    client = LMClient(
-        completion_model, async_capacity=2, max_requests_per_minute=5, cache_dir=tmp_path, output_parser=model_parser
-    )
+    completion_model = TestModel(use_cache=tmp_path)
+    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
@@ -78,4 +82,4 @@ def test_async_completion_with_cache(tmp_path):
     assert results[3].response['content'] == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time < 2
-    assert len(list(client._cache)) == 3  # type: ignore
+    assert len(list(completion_model._cache)) == 3  # type: ignore

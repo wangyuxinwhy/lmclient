@@ -1,31 +1,43 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from pathlib import Path
+from typing import Any, TypeVar
 
-import httpx
+from lmclient.models.base import HttpChatModel, RetryStrategy
+from lmclient.parser import ModelResponseParser, ParserError
+from lmclient.types import Messages, ModelResponse
 
-from lmclient.models.base import BaseChatModel
-from lmclient.types import Messages, ModelResponse, Prompt
-from lmclient.utils import ensure_messages
+T = TypeVar('T')
 
 
-class MinimaxChat(BaseChatModel):
+class MinimaxTextParser(ModelResponseParser):
+    def __call__(self, response: ModelResponse) -> str:
+        try:
+            output = response['choices'][0]['text']
+        except (KeyError, IndexError) as e:
+            raise ParserError('Parse response failed') from e
+        return output
+
+
+class MinimaxChat(HttpChatModel[T]):
     def __init__(
         self,
-        model_name: str = 'abab5.5-chat',
+        model: str = 'abab5.5-chat',
         group_id: str | None = None,
         api_key: str | None = None,
         timeout: int | None = 60,
+        response_parser: ModelResponseParser[T] | None = None,
+        retry: bool | RetryStrategy = False,
+        use_cache: Path | str | bool = False,
     ):
-        self.model_name = model_name
+        response_parser = response_parser or MinimaxTextParser()
+        super().__init__(timeout=timeout, response_parser=response_parser, retry=retry, use_cache=use_cache)
+        self.model = model
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
-        self.timeout = timeout
 
-    def chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
-        messages = ensure_messages(prompt)
-
+    def get_post_parameters(self, messages: Messages, **kwargs) -> dict[str, Any]:
         headers = {
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json',
@@ -34,38 +46,15 @@ class MinimaxChat(BaseChatModel):
         if 'temperature' in kwargs:
             kwargs['temperature'] = max(0.01, kwargs['temperature'])
         json_data.update(kwargs)
-        response = httpx.post(
-            f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
-            json=json_data,
-            headers=headers,
-            timeout=self.timeout,
-        ).json()
-        return response
-
-    async def async_chat(self, prompt: Prompt, **kwargs) -> ModelResponse:
-        messages = ensure_messages(prompt)
-
-        async with httpx.AsyncClient() as client:
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json',
-            }
-            json_data = self._messages_to_request_json_data(messages)
-            if 'temperature' in kwargs:
-                kwargs['temperature'] = max(0.01, kwargs['temperature'])
-            json_data.update(kwargs)
-            response = await client.post(
-                f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
-                json=json_data,
-                headers=headers,
-                timeout=self.timeout,
-            )
-            response = response.json()
-        return response
+        return {
+            'url': f'https://api.minimax.chat/v1/text/chatcompletion?GroupId={self.group_id}',
+            'json': json_data,
+            'headers': headers,
+        }
 
     def _messages_to_request_json_data(self, messages: Messages):
         data: dict[str, Any] = {
-            'model': self.model_name,
+            'model': self.model,
             'role_meta': {'user_name': '用户', 'bot_name': 'MM智能助理'},
         }
 
@@ -94,4 +83,4 @@ class MinimaxChat(BaseChatModel):
 
     @property
     def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model_name})'
+        return f'{self.__class__.__name__}({self.model})'

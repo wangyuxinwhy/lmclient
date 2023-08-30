@@ -24,22 +24,21 @@ def main(
     max_requests_per_minute: int = 20,
     async_capacity: int = 3,
     error_mode: ErrorMode = ErrorMode.IGNORE,
-    cache_dir: str = 'lmclient-translate-cache',
+    use_cache: bool = True,
 ):
 
     if model_name == 'azure':
-        model = AzureChat()
+        model = AzureChat(use_cache=use_cache)
     elif model_name == 'minimax':
-        model = MinimaxChat('abab5.5-chat')
+        model = MinimaxChat(use_cache=use_cache)
     else:
-        model = OpenAIChat(model_name)
+        model = OpenAIChat(model=model_name, use_cache=use_cache)
 
     client = LMClient[str](
         model,
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,
         error_mode=error_mode,
-        cache_dir=cache_dir,
     )
 
     texts = read_from_jsonl(input_josnl_file)
@@ -51,7 +50,7 @@ def main(
 
     with open(output_file, 'w') as f:
         for text, result in zip(texts, results):
-            f.write(json.dumps({'text': text, 'translation': result.output}, ensure_ascii=False) + '\n')
+            f.write(json.dumps({'text': text, 'translation': result.parsed_result}, ensure_ascii=False) + '\n')
 
 
 if __name__ == '__main__':

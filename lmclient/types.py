@@ -26,7 +26,6 @@ ModelResponse = Dict[str, Any]
 Prompt = Union[str, Sequence[dict]]
 
 
-class TaskResult(BaseModel, Generic[T]):  # type: ignore
-    output: Optional[T] = None
+class ChatModelOutput(BaseModel, Generic[T]):  # type: ignore
+    parsed_result: Optional[T] = None
     response: ModelResponse = Field(default_factory=dict)
-    error_message: Optional[str] = None

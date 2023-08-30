@@ -7,8 +7,9 @@ from typing import List
 
 import typer
 
-from lmclient import AzureChat, Field, LMClientForStructuredData, OpenAIChat, OpenAISchema
+from lmclient import LMClient, OpenAIExtract
 from lmclient.client import ErrorMode
+from lmclient.openai_schema import Field, OpenAISchema
 
 
 class ModelType(str, Enum):
@@ -35,43 +36,28 @@ def read_from_jsonl(file: str | Path):
 def main(
     input_josnl_file: Path,
     output_file: Path,
-    model_type: ModelType = ModelType.openai,
     max_requests_per_minute: int = 20,
     async_capacity: int = 3,
-    error_mode: ErrorMode = ErrorMode.IGNORE,
-    cache: bool = False,
+    error_mode: ErrorMode = ErrorMode.RAISE,
+    use_cache: bool = False,
 ):
 
-    if model_type is ModelType.azure:
-        model = AzureChat(
-            'gpt-35-turbo-16k',
-            api_version='2023-07-01-preview',
-        )
-    else:
-        model = OpenAIChat('gpt-3.5-turbo')
-
-    client = LMClientForStructuredData(
-        model,
+    model = OpenAIExtract(
         schema=NerInfo,
-        system_prompt='You are a NER model, extract entity information from the text.',
+        use_cache=use_cache,
+    )
+
+    client = LMClient(
+        model,
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,
         error_mode=error_mode,
     )
-    if not cache:
-        client.cache_dir = None
-
     texts = read_from_jsonl(input_josnl_file)
-    results = client.async_run(texts)
+    model_outputs = client.async_run(texts)
     with open(output_file, 'w') as f:
-        for text, result in zip(texts, results):
-            if result.output is None:
-                output = None
-            else:
-                try:
-                    output = result.output.model_dump()
-                except AttributeError:
-                    output = result.output.dict()
+        for text, output in zip(texts, model_outputs):
+            output = output.parsed_result.dict() if output.parsed_result else None
             output_dict = {'text': text, 'output': output}
             f.write(json.dumps(output_dict, ensure_ascii=False) + '\n')
 
