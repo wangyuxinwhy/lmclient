@@ -21,6 +21,7 @@ pyjwt = "^2.8.0"
 cachetools = "^5.3.1"
 tqdm = "^4.66.1"
 pydantic = ">1.0"
+docstring-parser = "^0.15"
 
 [tool.ruff]
 line-length = 128
@@ -37,6 +38,9 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
 ]
+
+[tool.pyright]
+reportIncompatibleMethodOverride=true
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"

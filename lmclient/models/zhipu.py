@@ -1,20 +1,50 @@
 from __future__ import annotations
 
+import logging
 import os
-import time
 from pathlib import Path
-from typing import Any, TypeVar
+import time
+from typing import Any, TypedDict, TypeVar
 
 import cachetools.func  # type: ignore
 import jwt
 
-from lmclient.models.base import HttpChatModel, RetryStrategy
+from lmclient.exceptions import MessageError
+from lmclient.models.http import HttpChatModel, RetryStrategy
 from lmclient.parser import ModelResponseParser, ParserError
-from lmclient.types import Messages, ModelResponse
+from lmclient.types import GeneralParameters, Messages, ModelParameters, ModelResponse
+from lmclient.utils import to_dict
 
 T = TypeVar('T')
 API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
+logger = logging.getLogger(__name__)
+
+
+class ZhiPuChatParameters(ModelParameters):
+    temperature: float = 1
+    top_p: float = 1
+
+    @classmethod
+    def from_general_parameters(cls, general_parameters: GeneralParameters):
+        return cls(
+            temperature=general_parameters.temperature,
+            top_p=general_parameters.top_p,
+        )
+
+
+class ZhiPuResponse(ModelResponse):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.content = self.content.replace('\n', ' ')
+
+
+class ZhiPuModel(HttpChatModel):
+    name = 'zhipu'
+
+class ZhiPuMessageDict(TypedDict):
+    role: str
+    content: str
 
 
 @cachetools.func.ttl_cache(maxsize=10, ttl=CACHE_TTL_SECONDS)
@@ -47,33 +77,43 @@ class ZhiPuParser(ModelResponseParser):
         return output
 
 
-class ZhiPuChat(HttpChatModel[T]):
+class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
     def __init__(
         self,
         model: str = 'chatglm_pro',
         api_base: str | None = None,
         api_key: str | None = None,
         timeout: int | None = 60,
-        response_parser: ModelResponseParser[T] | None = None,
         retry: bool | RetryStrategy = False,
+        default_parameters: ZhiPuChatParameters | None = None,
         use_cache: Path | str | bool = False,
-    ) -> None:
-        response_parser = response_parser or ZhiPuParser()
-        super().__init__(timeout=timeout, response_parser=response_parser, retry=retry, use_cache=use_cache)
+    ):
+        super().__init__(default_parameters=default_parameters, timeout=timeout, retry=retry, use_cache=use_cache)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
         self.api_base = api_base or os.getenv('ZHIPU_API_BASE') or 'https://open.bigmodel.cn/api/paas/v3/model-api'
         self.api_base.rstrip('/')
 
-    def get_post_parameters(self, messages: Messages, **kwargs) -> dict[str, Any]:
+    def get_post_parameters(self, messages: Messages, parameters: ZhiPuChatParameters | None = None) -> dict[str, Any]:
         for message in messages:
-            if message['role'] not in ('user', 'assistant'):
-                raise ValueError(f'Role of message must be user or assistant, but got {message["role"]}')
+            if message.role not in ('user', 'assistant'):
+                raise ValueError(f'Role of message must be user or assistant, but got {message.role}')
 
+        zhipu_messages: list[ZhiPuMessageDict] = []
+        for message in messages:
+            if message.role not in ('user', 'assistant'):
+                raise MessageError(f'Role of message must be user or assistant, but got {message.role}')
+            if not isinstance(message.content, str):
+                raise MessageError(f'Message content must be str, but got {type(message.content)}')
+            zhipu_messages.append({
+                'role': message.role,
+                'content': message.content,
+            })
         headers = {
             'Authorization': generate_token(self.api_key),
         }
-        params = {'prompt': messages, **kwargs}
+        parameters_dict = {} if parameters is None else to_dict(parameters, exclude_defaults=True)
+        params = {'prompt': messages, **parameters_dict}
         return {
             'url': f'{self.api_base}/{self.model}/invoke',
             'headers': headers,

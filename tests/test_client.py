@@ -8,14 +8,14 @@ from lmclient.types import Messages, ModelResponse
 
 
 class TestModel(BaseChatModel):
-    def call_model(self, messages: Messages, **kwargs) -> ModelResponse:
+    def chat_completion(self, messages: Messages, **kwargs) -> ModelResponse:
         return {
-            'content': f'Completed: {messages[-1]["content"]}',
+            'content': f'Completed: {messages[-1].content}',
         }
 
-    async def async_call_model(self, messages: Messages, **kwargs) -> ModelResponse:
+    async def async_chat_completion(self, messages: Messages, **kwargs) -> ModelResponse:
         return {
-            'content': f'Completed: {messages[-1]["content"]}',
+            'content': f'Completed: {messages[-1].content}',
         }
 
     def default_postprocess_function(self, response: ModelResponse) -> str:
@@ -42,9 +42,9 @@ def test_sync_completion():
     ]
     results = client.run(prompts)
 
-    assert isinstance(results[0].parsed_result, str)
-    assert results[0].parsed_result == 'Completed: Hello, my name is'
-    assert results[1].parsed_result == 'Completed: hello, who are you?'
+    assert isinstance(results[0].message, str)
+    assert results[0].message == 'Completed: Hello, my name is'
+    assert results[1].message == 'Completed: hello, who are you?'
     assert len(results) == len(prompts)
 
 
@@ -63,13 +63,13 @@ def test_async_completion():
     elapsed_time = time.perf_counter() - start_time
 
     assert results[0].response['content'] == 'Completed: Hello, my name is'
-    assert results[0].parsed_result == 'Completed: Hello, my name is'
+    assert results[0].message == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time > 4
 
 
 def test_async_completion_with_cache(tmp_path):
-    completion_model = TestModel(use_cache=tmp_path)
+    completion_model = TestModel(use_cache=tmp_path, response_parser=model_parser)
     client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
     LMClient.NUM_SECONDS_PER_MINUTE = 2
 

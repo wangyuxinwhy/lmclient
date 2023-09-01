@@ -4,20 +4,16 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Generic, Sequence, TypeVar
+from typing import ClassVar, Generic, Sequence
 
 import anyio
 import asyncer
 import tqdm
 
-from lmclient.models import BaseChatModel
-from lmclient.openai_schema import OpenAISchema
-from lmclient.types import ChatModelOutput, Prompt
+from lmclient.models.base import BaseChatModel, T
+from lmclient.types import ChatModelOutput, Message, Prompt
 
 DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
-
-T = TypeVar('T')
-T_O = TypeVar('T_O', bound=OpenAISchema)
 
 
 class ErrorMode(str, Enum):
@@ -51,21 +47,21 @@ class LMClient(Generic[T]):
         self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
 
-    def run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput[T]]:
+    def run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
-        task_results: list[ChatModelOutput[T]] = []
+        task_results: list[ChatModelOutput] = []
         for prompt in prompts:
             task_result = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
             task_results.append(task_result)
         progress_bar.close()
         return task_results
 
-    async def _async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput[T]]:
+    async def _async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
 
-        soon_values: list[asyncer.SoonValue[ChatModelOutput[T]]] = []
+        soon_values: list[asyncer.SoonValue[ChatModelOutput]] = []
         async with asyncer.create_task_group() as task_group:
             soon_func = task_group.soonify(self._async_run_single_task)
             for prompt in prompts:
@@ -82,7 +78,7 @@ class LMClient(Generic[T]):
         values = [soon_value.value for soon_value in soon_values]
         return values
 
-    def async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput[T]]:
+    def async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
         return asyncer.runnify(self._async_run)(prompts, **kwargs)
 
     async def _async_run_single_task(
@@ -91,10 +87,12 @@ class LMClient(Generic[T]):
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm,
-        **kwargs,
+        override_parameters: T | None = None,
     ) -> ChatModelOutput:
+        if isinstance(prompt, str):
+            prompt = [Message(role='user', content=prompt)]
         async with limiter:
-            task_key = self.chat_model.generate_hash_key(prompt=prompt, **kwargs)
+            task_key = self.chat_model.generate_hash_key(prompt=prompt, override_parameters)
             response = self.chat_model.try_load_response(task_key)
 
             if response is None:
@@ -105,14 +103,14 @@ class LMClient(Generic[T]):
                     self._task_created_time_list.append(int(time.time()))
 
             try:
-                output = await self.chat_model.async_chat(prompt=prompt, **kwargs)
+                output = await self.chat_model.async_chat_completion(messages=prompt, override_parameters=**kwargs)
                 progress_bar.update(1)
                 return output
             except BaseException as e:
                 if self.error_mode is ErrorMode.RAISE:
                     raise
                 elif self.error_mode is ErrorMode.IGNORE:
-                    return ChatModelOutput(error_message=str(e))
+                    return ChatModelOutput(messages=[Message(role='Error', content=f'Error: {e}')])
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
@@ -127,14 +125,14 @@ class LMClient(Generic[T]):
             self._task_created_time_list.append(int(time.time()))
 
         try:
-            output = self.chat_model.chat(prompt=prompt, **kwargs)
+            output = self.chat_model.chat_completion(messages=prompt, **kwargs)
             progress_bar.update(1)
             return output
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:
                 raise
             elif self.error_mode is ErrorMode.IGNORE:
-                return ChatModelOutput(output=f'Response Error: {e}', response={})
+                return ChatModelOutput(message=f'Response Error: {e}', response={})
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 

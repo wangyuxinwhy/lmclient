@@ -50,7 +50,7 @@ def main(
 
     with open(output_file, 'w') as f:
         for text, result in zip(texts, results):
-            f.write(json.dumps({'text': text, 'translation': result.parsed_result}, ensure_ascii=False) + '\n')
+            f.write(json.dumps({'text': text, 'translation': result.message}, ensure_ascii=False) + '\n')
 
 
 if __name__ == '__main__':

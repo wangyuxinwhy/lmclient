@@ -57,7 +57,7 @@ def main(
     model_outputs = client.async_run(texts)
     with open(output_file, 'w') as f:
         for text, output in zip(texts, model_outputs):
-            output = output.parsed_result.dict() if output.parsed_result else None
+            output = output.message.dict() if output.message else None
             output_dict = {'text': text, 'output': output}
             f.write(json.dumps(output_dict, ensure_ascii=False) + '\n')
 
