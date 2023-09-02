@@ -18,7 +18,6 @@ from lmclient.types import (
     ModelParameters,
     ModelResponse,
 )
-from lmclient.utils import to_dict
 
 DEFAULT_MINIMAX_BOT_NAME = 'MM智能助理'
 DEFAULT_MINIMAX_USER_NAME = '用户'
@@ -105,7 +104,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
         json_data = {'model': self.model, 'messages': [self._lmclient_to_minimax(message) for message in messages]}
-        parameters_dict = to_dict(parameters, exclude_none=True)
+        parameters_dict = parameters.model_dump(exclude_none=True)
         if 'temperature' in parameters_dict:
             parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
         json_data.update(parameters_dict)

@@ -5,6 +5,21 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import NotRequired, Self, TypedDict
 
+Messages = List['Message']
+ModelResponse = Dict[str, Any]
+Prompt = Union[str, 'Message', 'MessageDict', Sequence[Union['MessageDict', 'Message']]]
+
+
+class FunctionDict(TypedDict):
+    name: str
+    description: NotRequired[str]
+    parameters: Dict[str, Any]
+
+
+class FunctionCallDict(TypedDict):
+    name: str
+    arguments: str
+
 
 class Message(BaseModel):
     role: str
@@ -20,12 +35,6 @@ class MessageDict(TypedDict):
     role: str
     content: Union[str, FunctionCallDict]
     name: NotRequired[str]
-
-
-class FunctionDict(TypedDict):
-    name: str
-    description: NotRequired[str]
-    parameters: Dict[str, Any]
 
 
 class GeneralParameters(BaseModel):
@@ -59,13 +68,3 @@ class RetryStrategy(BaseModel):
 
 class HttpChatModelOutput(ChatModelOutput):
     response: ModelResponse = Field(default_factory=dict)
-
-
-class FunctionCallDict(TypedDict):
-    name: str
-    arguments: str
-
-
-Messages = List[Message]
-ModelResponse = Dict[str, Any]
-Prompt = Union[str, Message, MessageDict, Sequence[Union[MessageDict, Message]]]

@@ -12,7 +12,6 @@ from lmclient.exceptions import MessageError
 from lmclient.models.http import HttpChatModel, RetryStrategy
 from lmclient.parser import ParserError
 from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
-from lmclient.utils import to_dict
 
 T = TypeVar('T')
 API_TOKEN_TTL_SECONDS = 3 * 60
@@ -96,7 +95,7 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         headers = {
             'Authorization': generate_token(self.api_key),
         }
-        parameters_dict = to_dict(parameters, exclude_defaults=True)
+        parameters_dict = parameters.model_dump(exclude_defaults=True)
         params = {'prompt': zhipu_messages, **parameters_dict}
         return {
             'url': f'{self.api_base}/{self.model}/invoke',

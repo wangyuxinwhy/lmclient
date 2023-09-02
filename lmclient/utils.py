@@ -25,7 +25,7 @@ PydanticVersion = get_pydantic_version()
 
 
 def generate_chat_completion_hash_key(model_id: str, messages: Messages, parameters: ModelParameters) -> str:
-    messages_text = '---'.join([f'{k}={v}' for message in messages for k, v in to_dict(message).items()])
+    messages_text = '---'.join([f'{k}={v}' for message in messages for k, v in message.model_dump().items()])
     messages_hash = md5_hash(messages_text)
     parameters_hash = md5_hash(parameters.model_dump_json(exclude_none=True))
     return f'{model_id}|{messages_hash}|{parameters_hash}|v{__cache_version__}'
@@ -121,10 +121,3 @@ class BaseSchema(BaseModel):
             raise MessageError(f'{message} is not a valid function call message')
         arguments = json.loads(function_call['arguments'], strict=False)
         return cls(**arguments)
-
-
-def to_dict(value: BaseModel, exclude_defaults: bool = False, exclude_none: bool = False):
-    if PydanticVersion == 2:
-        return value.model_dump(exclude_defaults=exclude_defaults, exclude_none=exclude_none)
-    else:
-        return value.dict(exclude_defaults=exclude_defaults, exclude_none=exclude_none)

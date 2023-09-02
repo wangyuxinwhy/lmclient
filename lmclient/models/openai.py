@@ -10,7 +10,6 @@ from lmclient.exceptions import MessageError
 from lmclient.models.http import HttpChatModel, RetryStrategy
 from lmclient.parser import ParserError
 from lmclient.types import FunctionCallDict, FunctionDict, GeneralParameters, Message, Messages, ModelParameters, ModelResponse
-from lmclient.utils import to_dict
 
 
 class FunctionCallNameDict(TypedDict):
@@ -144,7 +143,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         headers = {
             'Authorization': f'Bearer {self.api_key}',
         }
-        parameters_dict = to_dict(parameters, exclude_defaults=True)
+        parameters_dict = parameters.model_dump(exclude_defaults=True)
         openai_messages = [convert_lmclient_to_openai(message) for message in messages]
         params = {
             'model': self.model,

@@ -11,7 +11,6 @@ from lmclient.models.openai import (
     parse_openai_model_reponse,
 )
 from lmclient.types import Messages, ModelResponse
-from lmclient.utils import to_dict
 
 
 class AzureChat(HttpChatModel[OpenAIChatParameters]):
@@ -38,7 +37,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         headers = {
             'api-key': self.api_key,
         }
-        parameters_dict = to_dict(parameters, exclude_defaults=True)
+        parameters_dict = parameters.model_dump(exclude_defaults=True)
         openai_messages = [convert_lmclient_to_openai(message) for message in messages]
         params = {
             'model': self.model,
