@@ -80,72 +80,72 @@ def convert_lmclient_to_openai(message: Message, valid_roles: set[str] | None = 
         if message.role != 'assistant':
             raise MessageError(f'Invalid role "{message.role}" for function call, can only be made by "assistant"')
         return {
-                'role': message.role,
-                'function_call': content,
-                'content': None,
-            }
+            'role': message.role,
+            'function_call': content,
+            'content': None,
+        }
     elif message.role == 'function':
         name = message.name
         if name is None:
             raise MessageError(f'Function name is required, message: {message}')
-        return    {
-                'role': message.role,
-                'name': name,
-                'content': content,
-            }
+        return {
+            'role': message.role,
+            'name': name,
+            'content': content,
+        }
     else:
         return {
-                'role': message.role,
-                'content': content,
-            }
-
+            'role': message.role,
+            'content': content,
+        }
 
 
 def parse_openai_model_reponse(response: ModelResponse) -> Messages:
     funcation_call = response['choices'][0]['message'].get('function_call')
     try:
         if bool(funcation_call):
-            return [Message(
-                role='assistant',
-                content=funcation_call,
-            )]
+            return [
+                Message(
+                    role='assistant',
+                    content=funcation_call,
+                )
+            ]
         else:
             text: str = response['choices'][0]['message']['content']
-            return [Message(
-                role='assistant',
-                content=text,
-            )]
+            return [
+                Message(
+                    role='assistant',
+                    content=text,
+                )
+            ]
     except (KeyError, IndexError) as e:
         raise ParserError('Parse response failed') from e
 
 
 class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
-    parameters_type = OpenAIChatParameters
+    model_type = 'openai'
 
     def __init__(
         self,
         model: str = 'gpt-3.5-turbo',
-        system_prompt: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         timeout: int | None = 60,
         retry: bool | RetryStrategy = False,
-        default_parameters: OpenAIChatParameters | None = None,
+        parameters: OpenAIChatParameters = OpenAIChatParameters(),
         use_cache: Path | str | bool = False,
     ):
-        super().__init__(default_parameters=default_parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
         self.model = model
-        self.system_prompt = system_prompt
         self.api_base = api_base or os.getenv('OPENAI_API_BASE') or 'https://api.openai.com/v1'
         self.api_key = api_key or os.environ['OPENAI_API_KEY']
 
-    def get_post_parameters(self, messages: Messages, parameters: OpenAIChatParameters | None = None) -> dict[str, Any]:
+    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> dict[str, Any]:
         headers = {
             'Authorization': f'Bearer {self.api_key}',
         }
-        parameters_dict = {} if parameters is None else to_dict(parameters, exclude_defaults=True)
-        openai_messages: list[OpenAIMessageDict] = [] if self.system_prompt is None else [{'role': 'system', 'content': self.system_prompt}]
-        openai_messages = openai_messages + [convert_lmclient_to_openai(message) for message in messages]
+        parameters_dict = to_dict(parameters, exclude_defaults=True)
+        openai_messages = [convert_lmclient_to_openai(message) for message in messages]
         params = {
             'model': self.model,
             'messages': openai_messages,
@@ -161,5 +161,9 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         return parse_openai_model_reponse(response)
 
     @property
-    def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model})'
+    def name(self) -> str:
+        return self.model
+
+    @classmethod
+    def from_name(cls, name: str, **kwargs: Any):
+        return cls(model=name, **kwargs)

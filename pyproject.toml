@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "lmclient-core"
-version = "0.6.0"
+version = "0.7.0"
 description = "LM Async Client, openai client, azure openai client ..."
 authors = ["wangyuxin <wangyuxin@mokahr.com>"]
 readme = "README.md"
@@ -40,7 +40,7 @@ ignore = [
 ]
 
 [tool.pyright]
-reportIncompatibleMethodOverride=true
+reportMissingTypeStubs=false
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"

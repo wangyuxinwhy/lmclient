@@ -4,14 +4,15 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Generic, Sequence
+from typing import ClassVar, Generic, NoReturn, Sequence, cast
 
 import anyio
 import asyncer
 import tqdm
 
-from lmclient.models.base import BaseChatModel, T
-from lmclient.types import ChatModelOutput, Message, Prompt
+from lmclient.models import load_from_model_id
+from lmclient.models.base import T_O, T_P, BaseChatModel
+from lmclient.types import ChatModelOutput, Message, Messages, Prompt
 
 DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
 
@@ -27,36 +28,59 @@ class ProgressBarMode(str, Enum):
     NEVER = 'never'
 
 
-class LMClient(Generic[T]):
+def ensure_messages(prompt: Prompt) -> Messages:
+    if isinstance(prompt, str):
+        return [Message(role='user', content=prompt)]
+    elif isinstance(prompt, Message):
+        return [prompt]
+    elif isinstance(prompt, dict):
+        return [Message(**prompt)]
+    else:
+        messages: list[Message] = []
+        for message in prompt:
+            if isinstance(message, dict):
+                messages.append(Message(**message))
+            else:
+                messages.append(message)
+        return messages
+
+
+class LMClient(Generic[T_P, T_O]):
     error_mode: ErrorMode
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
     def __init__(
         self,
-        chat_model: BaseChatModel[T],
+        chat_model: BaseChatModel[T_P, T_O] | str,
         async_capacity: int = 3,
         max_requests_per_minute: int = 20,
         error_mode: ErrorMode | str = ErrorMode.RAISE,
         progress_bar: ProgressBarMode | str = ProgressBarMode.AUTO,
     ):
-        self.chat_model = chat_model
+        if isinstance(chat_model, str):
+            chat_model = load_from_model_id(chat_model)  # type: ignore
+            self.chat_model = cast(BaseChatModel[T_P, T_O], chat_model)
+        else:
+            self.chat_model = chat_model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
         self.error_mode = ErrorMode(error_mode)
         self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
 
-    def run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
+    def run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         task_results: list[ChatModelOutput] = []
         for prompt in prompts:
-            task_result = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
+            task_result = self._run_single_task(
+                prompt=prompt, progress_bar=progress_bar, override_parameters=override_parameters
+            )
             task_results.append(task_result)
         progress_bar.close()
         return task_results
 
-    async def _async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
+    async def _async_run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -70,7 +94,7 @@ class LMClient(Generic[T]):
                     limiter=limiter,
                     task_created_lock=task_created_lock,
                     progress_bar=progress_bar,
-                    **kwargs,
+                    override_parameters=override_parameters,
                 )
                 soon_values.append(soon_value)
 
@@ -78,32 +102,28 @@ class LMClient(Generic[T]):
         values = [soon_value.value for soon_value in soon_values]
         return values
 
-    def async_run(self, prompts: Sequence[Prompt], **kwargs) -> list[ChatModelOutput]:
-        return asyncer.runnify(self._async_run)(prompts, **kwargs)
+    def async_run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
+        return asyncer.runnify(self._async_run)(prompts, override_parameters)
 
     async def _async_run_single_task(
         self,
         prompt: Prompt,
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
-        progress_bar: tqdm.tqdm,
-        override_parameters: T | None = None,
+        progress_bar: tqdm.tqdm[NoReturn],
+        override_parameters: T_P | None = None,
     ) -> ChatModelOutput:
-        if isinstance(prompt, str):
-            prompt = [Message(role='user', content=prompt)]
+        messages = ensure_messages(prompt)
+
         async with limiter:
-            task_key = self.chat_model.generate_hash_key(prompt=prompt, override_parameters)
-            response = self.chat_model.try_load_response(task_key)
-
-            if response is None:
-                async with task_created_lock:
-                    sleep_time = self._calculate_sleep_time()
-                    if sleep_time > 0:
-                        await anyio.sleep(sleep_time)
-                    self._task_created_time_list.append(int(time.time()))
-
             try:
-                output = await self.chat_model.async_chat_completion(messages=prompt, override_parameters=**kwargs)
+                output = await self.chat_model.async_chat_completion(messages=messages, override_parameters=override_parameters)
+                if not output.is_cache:
+                    async with task_created_lock:
+                        sleep_time = self._calculate_sleep_time()
+                        if sleep_time > 0:
+                            await anyio.sleep(sleep_time)
+                        self._task_created_time_list.append(int(time.time()))
                 progress_bar.update(1)
                 return output
             except BaseException as e:
@@ -114,25 +134,25 @@ class LMClient(Generic[T]):
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
-    def _run_single_task(self, prompt: Prompt, progress_bar: tqdm.tqdm, **kwargs) -> ChatModelOutput:
-        task_key = self.chat_model.generate_hash_key(prompt=prompt, **kwargs)
-        response = self.chat_model.try_load_response(task_key)
-
-        if response is None:
-            sleep_time = self._calculate_sleep_time()
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            self._task_created_time_list.append(int(time.time()))
+    def _run_single_task(
+        self, prompt: Prompt, progress_bar: tqdm.tqdm[NoReturn], override_parameters: T_P | None = None
+    ) -> ChatModelOutput:
+        messages = ensure_messages(prompt)
 
         try:
-            output = self.chat_model.chat_completion(messages=prompt, **kwargs)
+            output = self.chat_model.chat_completion(messages=messages, override_parameters=override_parameters)
+            if not output.is_cache:
+                sleep_time = self._calculate_sleep_time()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                self._task_created_time_list.append(int(time.time()))
             progress_bar.update(1)
             return output
         except BaseException as e:
             if self.error_mode is ErrorMode.RAISE:
                 raise
             elif self.error_mode is ErrorMode.IGNORE:
-                return ChatModelOutput(message=f'Response Error: {e}', response={})
+                return ChatModelOutput(messages=[Message(role='Error', content=str(e))])
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
@@ -150,7 +170,7 @@ class LMClient(Generic[T]):
         else:
             return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
 
-    def _get_progress_bar(self, num_tasks: int) -> tqdm.tqdm:
+    def _get_progress_bar(self, num_tasks: int) -> tqdm.tqdm[NoReturn]:
         use_progress_bar = (self.progress_bar_mode is ProgressBarMode.ALWAYS) or (
             self.progress_bar_mode is ProgressBarMode.AUTO and num_tasks > self.PROGRESS_BAR_THRESHOLD
         )

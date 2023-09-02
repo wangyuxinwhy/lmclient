@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
-from pydantic import BaseModel, Field
-from typing_extensions import NotRequired, TypedDict
+from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import NotRequired, Self, TypedDict
 
 
 class Message(BaseModel):
@@ -16,15 +16,16 @@ class Message(BaseModel):
         return isinstance(self.content, dict)
 
 
-class ChatModelOutput(BaseModel):
-    messages: Messages
-    response: ModelResponse = Field(default_factory=dict)
+class MessageDict(TypedDict):
+    role: str
+    content: Union[str, FunctionCallDict]
+    name: NotRequired[str]
 
 
 class FunctionDict(TypedDict):
     name: str
     description: NotRequired[str]
-    parameters: dict
+    parameters: Dict[str, Any]
 
 
 class GeneralParameters(BaseModel):
@@ -35,11 +36,29 @@ class GeneralParameters(BaseModel):
     function_call: Optional[str] = None
 
 
+class ChatModelOutput(BaseModel):
+    messages: Messages
+    hash_key: str = ''
+    is_cache: bool = False
+    reply: str = ''
+
+
 class ModelParameters(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
     @classmethod
-    def from_general_parameters(cls, general_parameters: GeneralParameters):
+    def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
         raise NotImplementedError
+
+
+class RetryStrategy(BaseModel):
+    min_wait_seconds: int = 2
+    max_wait_seconds: int = 20
+    max_attempt: int = 3
+
+
+class HttpChatModelOutput(ChatModelOutput):
+    response: ModelResponse = Field(default_factory=dict)
 
 
 class FunctionCallDict(TypedDict):
@@ -49,4 +68,4 @@ class FunctionCallDict(TypedDict):
 
 Messages = List[Message]
 ModelResponse = Dict[str, Any]
-Prompt = Union[str, Messages]
+Prompt = Union[str, Message, MessageDict, Sequence[Union[MessageDict, Message]]]

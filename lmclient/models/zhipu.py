@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import logging
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, TypedDict, TypeVar
 
 import cachetools.func  # type: ignore
@@ -11,14 +10,13 @@ import jwt
 
 from lmclient.exceptions import MessageError
 from lmclient.models.http import HttpChatModel, RetryStrategy
-from lmclient.parser import ModelResponseParser, ParserError
-from lmclient.types import GeneralParameters, Messages, ModelParameters, ModelResponse
+from lmclient.parser import ParserError
+from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
 from lmclient.utils import to_dict
 
 T = TypeVar('T')
 API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
-logger = logging.getLogger(__name__)
 
 
 class ZhiPuChatParameters(ModelParameters):
@@ -32,15 +30,6 @@ class ZhiPuChatParameters(ModelParameters):
             top_p=general_parameters.top_p,
         )
 
-
-class ZhiPuResponse(ModelResponse):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.content = self.content.replace('\n', ' ')
-
-
-class ZhiPuModel(HttpChatModel):
-    name = 'zhipu'
 
 class ZhiPuMessageDict(TypedDict):
     role: str
@@ -60,7 +49,7 @@ def generate_token(api_key: str):
         'timestamp': int(round(time.time() * 1000)),
     }
 
-    return jwt.encode(
+    return jwt.encode(  # type: ignore
         payload,
         secret,
         algorithm='HS256',
@@ -68,16 +57,9 @@ def generate_token(api_key: str):
     )
 
 
-class ZhiPuParser(ModelResponseParser):
-    def __call__(self, response: ModelResponse) -> str:
-        try:
-            output = response['data']['choices'][0]['content'].strip('"').strip()
-        except (KeyError, IndexError) as e:
-            raise ParserError(f'Parse response failed, reponse: {response}') from e
-        return output
-
-
 class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
+    model_type = 'zhipu'
+
     def __init__(
         self,
         model: str = 'chatglm_pro',
@@ -85,16 +67,16 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         api_key: str | None = None,
         timeout: int | None = 60,
         retry: bool | RetryStrategy = False,
-        default_parameters: ZhiPuChatParameters | None = None,
+        parameters: ZhiPuChatParameters = ZhiPuChatParameters(),
         use_cache: Path | str | bool = False,
     ):
-        super().__init__(default_parameters=default_parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
         self.api_base = api_base or os.getenv('ZHIPU_API_BASE') or 'https://open.bigmodel.cn/api/paas/v3/model-api'
         self.api_base.rstrip('/')
 
-    def get_post_parameters(self, messages: Messages, parameters: ZhiPuChatParameters | None = None) -> dict[str, Any]:
+    def get_request_parameters(self, messages: Messages, parameters: ZhiPuChatParameters) -> dict[str, Any]:
         for message in messages:
             if message.role not in ('user', 'assistant'):
                 raise ValueError(f'Role of message must be user or assistant, but got {message.role}')
@@ -105,21 +87,34 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
                 raise MessageError(f'Role of message must be user or assistant, but got {message.role}')
             if not isinstance(message.content, str):
                 raise MessageError(f'Message content must be str, but got {type(message.content)}')
-            zhipu_messages.append({
-                'role': message.role,
-                'content': message.content,
-            })
+            zhipu_messages.append(
+                {
+                    'role': message.role,
+                    'content': message.content,
+                }
+            )
         headers = {
             'Authorization': generate_token(self.api_key),
         }
-        parameters_dict = {} if parameters is None else to_dict(parameters, exclude_defaults=True)
-        params = {'prompt': messages, **parameters_dict}
+        parameters_dict = to_dict(parameters, exclude_defaults=True)
+        params = {'prompt': zhipu_messages, **parameters_dict}
         return {
             'url': f'{self.api_base}/{self.model}/invoke',
             'headers': headers,
             'json': params,
         }
 
+    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+        try:
+            text = response['data']['choices'][0]['content'].strip('"').strip()
+            return [Message(role='assistant', content=text)]
+        except (KeyError, IndexError) as e:
+            raise ParserError(f'Parse response failed, reponse: {response}') from e
+
     @property
-    def identifier(self) -> str:
-        return f'{self.__class__.__name__}({self.model})'
+    def name(self) -> str:
+        return self.model
+
+    @classmethod
+    def from_name(cls, name: str, **kwargs: Any):
+        return cls(model=name, **kwargs)

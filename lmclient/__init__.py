@@ -1,6 +1,25 @@
-from lmclient.client import LMClient as LMClient
-from lmclient.models import AzureChat as AzureChat
-from lmclient.models import MinimaxProChat as MinimaxProChat
-from lmclient.models import OpenAIChat as OpenAIChat
-from lmclient.models import OpenAIExtract as OpenAIExtract
-from lmclient.models import ZhiPuChat as ZhiPuChat
+from lmclient.chat_engine import ChatEngine
+from lmclient.client import LMClient
+from lmclient.models import (
+    AzureChat,
+    MinimaxProChat,
+    MinimaxProChatParameters,
+    OpenAIChat,
+    OpenAIChatParameters,
+    ZhiPuChat,
+    ZhiPuChatParameters,
+)
+from lmclient.version import __version__
+
+__all__ = [
+    'LMClient',
+    'ChatEngine',
+    'AzureChat',
+    'OpenAIChat',
+    'OpenAIChatParameters',
+    'MinimaxProChat',
+    'MinimaxProChatParameters',
+    'ZhiPuChat',
+    'ZhiPuChatParameters',
+    '__version__',
+]
