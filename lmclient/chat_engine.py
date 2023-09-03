@@ -71,6 +71,16 @@ class ChatEngine(Generic[T_P, T_O]):
         else:
             return self._recursive_function_call(reply, parameters)
 
+    async def async_chat(self, user_input: str, **extra_parameters: Any) -> str:
+        parameters = self._parameters.model_copy(update=extra_parameters)
+        self.history.append(Message(role='user', content=user_input))
+        model_response = await self._chat_model.async_chat_completion(self.history, parameters)
+        self.history.extend(model_response.messages)
+        if isinstance(reply := model_response.messages[-1].content, str):
+            return reply
+        else:
+            return await self._async_recursive_function_call(reply, parameters)
+
     def run_function_call(self, function_call: FunctionCallDict):
         function = None
         for i in self.functions:
@@ -97,6 +107,18 @@ class ChatEngine(Generic[T_P, T_O]):
             Message(role='function', name=function_call['name'], content=json.dumps(function_output, ensure_ascii=False))
         )
         model_response = self._chat_model.chat_completion(self.history, parameters)
+        self.history.extend(model_response.messages)
+        if isinstance(reply := model_response.messages[-1].content, str):
+            return reply
+        else:
+            return self._recursive_function_call(reply, parameters)
+
+    async def _async_recursive_function_call(self, function_call: FunctionCallDict, parameters: T_P) -> str:
+        function_output = self.run_function_call(function_call)
+        self.history.append(
+            Message(role='function', name=function_call['name'], content=json.dumps(function_output, ensure_ascii=False))
+        )
+        model_response = await self._chat_model.async_chat_completion(self.history, parameters)
         self.history.extend(model_response.messages)
         if isinstance(reply := model_response.messages[-1].content, str):
             return reply
