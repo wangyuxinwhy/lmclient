@@ -13,7 +13,7 @@
 5. 支持磁盘缓存
 6. 100% type hints
 7. 非常易用
-8. 支持 OpenAI, Azure, Minimax, ZhiPu 等模型
+8. 支持 OpenAI, Azure, Minimax, 智谱, 百度文心
 9. 支持 FunctionCall
 
 ## 安装方式
