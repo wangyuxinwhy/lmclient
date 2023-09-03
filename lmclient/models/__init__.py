@@ -4,6 +4,7 @@ from lmclient.models.azure import AzureChat
 from lmclient.models.base import BaseChatModel
 from lmclient.models.minimax_pro import MinimaxProChat, MinimaxProChatParameters
 from lmclient.models.openai import OpenAIChat, OpenAIChatParameters
+from lmclient.models.wenxin import WenxinChat, WenxinChatParameters
 from lmclient.models.zhipu import ZhiPuChat, ZhiPuChatParameters
 
 ModelRegistry = {
@@ -11,6 +12,7 @@ ModelRegistry = {
     OpenAIChat.model_type: OpenAIChat,
     MinimaxProChat.model_type: MinimaxProChat,
     ZhiPuChat.model_type: ZhiPuChat,
+    WenxinChat.model_type: WenxinChat,
 }
 
 
@@ -36,4 +38,6 @@ __all__ = [
     'OpenAIChatParameters',
     'ZhiPuChat',
     'ZhiPuChatParameters',
+    'WenxinChat',
+    'WenxinChatParameters',
 ]

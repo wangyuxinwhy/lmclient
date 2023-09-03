@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import NotRequired, Self, TypedDict
@@ -8,6 +8,7 @@ from typing_extensions import NotRequired, Self, TypedDict
 Messages = List['Message']
 ModelResponse = Dict[str, Any]
 Prompt = Union[str, 'Message', 'MessageDict', Sequence[Union['MessageDict', 'Message']]]
+Role = Literal['user', 'assistant', 'function', 'error']
 
 
 class FunctionDict(TypedDict):
@@ -22,7 +23,7 @@ class FunctionCallDict(TypedDict):
 
 
 class Message(BaseModel):
-    role: str
+    role: Role
     content: Union[str, FunctionCallDict]
     name: Optional[str] = None
 
@@ -32,7 +33,7 @@ class Message(BaseModel):
 
 
 class MessageDict(TypedDict):
-    role: str
+    role: Role
     content: Union[str, FunctionCallDict]
     name: NotRequired[str]
 

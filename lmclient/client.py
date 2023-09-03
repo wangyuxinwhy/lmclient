@@ -130,7 +130,7 @@ class LMClient(Generic[T_P, T_O]):
                 if self.error_mode is ErrorMode.RAISE:
                     raise
                 elif self.error_mode is ErrorMode.IGNORE:
-                    return ChatModelOutput(messages=[Message(role='Error', content=f'Error: {e}')])
+                    return ChatModelOutput(messages=[Message(role='error', content=f'Error: {e}')])
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
@@ -152,7 +152,7 @@ class LMClient(Generic[T_P, T_O]):
             if self.error_mode is ErrorMode.RAISE:
                 raise
             elif self.error_mode is ErrorMode.IGNORE:
-                return ChatModelOutput(messages=[Message(role='Error', content=str(e))])
+                return ChatModelOutput(messages=[Message(role='error', content=str(e))])
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 

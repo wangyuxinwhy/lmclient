@@ -17,6 +17,7 @@ from lmclient.types import (
     Messages,
     ModelParameters,
     ModelResponse,
+    Role,
 )
 
 DEFAULT_MINIMAX_BOT_NAME = 'MM智能助理'
@@ -120,10 +121,10 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
 
     @staticmethod
     def _minimax_to_lmclient(message: MinimaxMessageDict) -> Message:
-        role_map = {
+        role_map: dict[str, Role] = {
             'USER': 'user',
             'BOT': 'assistant',
-            'FUNCTION': 'funtion',
+            'FUNCTION': 'function',
         }
 
         if 'function_call' in message:

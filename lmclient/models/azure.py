@@ -19,6 +19,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
     def __init__(
         self,
         model: str | None = None,
+        system_prompt: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         api_version: str | None = None,
@@ -29,6 +30,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
     ):
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
         self.model = model or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
+        self.system_prompt = system_prompt
         self.api_key = api_key or os.environ['AZURE_API_KEY']
         self.api_base = api_base or os.environ['AZURE_API_BASE']
         self.api_version = api_version or os.getenv('AZURE_API_VERSION')
@@ -39,6 +41,8 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         }
         parameters_dict = parameters.model_dump(exclude_defaults=True)
         openai_messages = [convert_lmclient_to_openai(message) for message in messages]
+        if self.system_prompt:
+            openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {
             'model': self.model,
             'messages': openai_messages,

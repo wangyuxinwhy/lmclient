@@ -59,7 +59,6 @@ def test_async_completion():
 
     start_time = time.perf_counter()
     messages: list[MessageDict] = [
-        {'role': 'system', 'content': 'your are lmclient demo assistant'},
         {'role': 'user', 'content': 'hello, who are you?'},
     ]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4

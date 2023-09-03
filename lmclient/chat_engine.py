@@ -57,6 +57,10 @@ class ChatEngine(Generic[T_P, T_O]):
         self._extra_parameters = extra_parameters
         self._parameters = self._parameters.model_copy(update=self._extra_parameters)
 
+    @property
+    def chat_model(self):
+        return self._chat_model
+
     def chat(self, user_input: str, **extra_parameters: Any) -> str:
         parameters = self._parameters.model_copy(update=extra_parameters)
         self.history.append(Message(role='user', content=user_input))

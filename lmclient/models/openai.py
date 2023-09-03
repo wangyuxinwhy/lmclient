@@ -127,6 +127,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
     def __init__(
         self,
         model: str = 'gpt-3.5-turbo',
+        system_prompt: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
         timeout: int | None = 60,
@@ -136,6 +137,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
     ):
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
         self.model = model
+        self.system_prompt = system_prompt
         self.api_base = api_base or os.getenv('OPENAI_API_BASE') or 'https://api.openai.com/v1'
         self.api_key = api_key or os.environ['OPENAI_API_KEY']
 
@@ -145,6 +147,8 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
         parameters_dict = parameters.model_dump(exclude_defaults=True)
         openai_messages = [convert_lmclient_to_openai(message) for message in messages]
+        if self.system_prompt:
+            openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {
             'model': self.model,
             'messages': openai_messages,

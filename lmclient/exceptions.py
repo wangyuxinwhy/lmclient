@@ -4,3 +4,7 @@ class MessageError(Exception):
     """
 
     pass
+
+
+class ResponseError(Exception):
+    pass

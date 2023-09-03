@@ -9,7 +9,7 @@ def get_weather(loc: str) -> str:
     Parameters:
         loc: 地区，比如北京，上海等
     """
-    return f"{loc}，晴朗，27度"
+    return f'{loc}，晴朗，27度'
 
 
 @function
@@ -28,4 +28,3 @@ def test_function():
     engine = ChatEngine(model, temperature=0, functions=[get_weather, google])
     reply = engine.chat('今天北京天气怎么样？')
     assert '27' in reply
-
