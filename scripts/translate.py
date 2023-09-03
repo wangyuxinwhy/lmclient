@@ -5,44 +5,36 @@ from pathlib import Path
 
 import typer
 
-from lmclient import AzureChat, LMClient, MinimaxChat, OpenAIChat
+from lmclient import LMClient
 from lmclient.client import ErrorMode
+from lmclient.models import load_from_model_id
 
 
-def read_from_jsonl(file: str | Path):
-    texts: list[str] = []
-    with open(file, 'r') as f:
-        for line in f:
-            texts.append(json.loads(line.strip())['text'])
+def read_from_text_file(file: str | Path):
+    file = Path(file)
+    texts: list[str] = file.read_text().split('\n')
     return texts
 
 
 def main(
     input_josnl_file: Path,
     output_file: Path,
-    model_name: str = 'gpt-3.5-turbo',
-    max_requests_per_minute: int = 20,
+    model_id: str = 'openai',
+    max_requests_per_minute: int = 5,
     async_capacity: int = 3,
-    error_mode: ErrorMode = ErrorMode.IGNORE,
+    error_mode: ErrorMode = ErrorMode.RAISE,
     use_cache: bool = True,
-):
-
-    if model_name == 'azure':
-        model = AzureChat(use_cache=use_cache)
-    elif model_name == 'minimax':
-        model = MinimaxChat(use_cache=use_cache)
-    else:
-        model = OpenAIChat(model=model_name, use_cache=use_cache)
-
-    client = LMClient[str](
-        model,
+) -> None:
+    model = load_from_model_id(model_id=model_id, use_cache=use_cache)
+    client = LMClient(
+        model,  # type: ignore
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,
         error_mode=error_mode,
     )
 
-    texts = read_from_jsonl(input_josnl_file)
-    prompts = []
+    texts = read_from_text_file(input_josnl_file)
+    prompts: list[str] = []
     for text in texts:
         prompt = f'translate following sentece to chinese\nsentence: {text}\ntranslation: '
         prompts.append(prompt)
@@ -50,7 +42,7 @@ def main(
 
     with open(output_file, 'w') as f:
         for text, result in zip(texts, results):
-            f.write(json.dumps({'text': text, 'translation': result.parsed_result}, ensure_ascii=False) + '\n')
+            f.write(json.dumps({'text': text, 'translation': result.reply}, ensure_ascii=False) + '\n')
 
 
 if __name__ == '__main__':

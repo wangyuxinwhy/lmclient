@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "lmclient-core"
-version = "0.6.0"
+version = "0.7.0"
 description = "LM Async Client, openai client, azure openai client ..."
 authors = ["wangyuxin <wangyuxin@mokahr.com>"]
 readme = "README.md"
@@ -21,6 +21,7 @@ pyjwt = "^2.8.0"
 cachetools = "^5.3.1"
 tqdm = "^4.66.1"
 pydantic = ">1.0"
+docstring-parser = "^0.15"
 
 [tool.ruff]
 line-length = 128
@@ -37,6 +38,9 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
 ]
+
+[tool.pyright]
+reportMissingTypeStubs=false
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"

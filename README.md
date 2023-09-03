@@ -13,6 +13,8 @@
 5. 支持磁盘缓存
 6. 100% type hints
 7. 非常易用
+8. 支持 OpenAI, Azure, Minimax, 智谱, 百度文心
+9. 支持 FunctionCall
 
 ## 安装方式
 支持 python3.8 及以上
@@ -22,10 +24,11 @@ pip install lmclient-core
 
 ## 使用方法
 
+1. LMClient
 ```python
-from lmclient import LMClient, OpenAIChat
+from lmclient import LMClient, OpenAIChat, OpenAIChatParameters
 
-model = OpenAIChat('gpt-3.5-turbo')
+model = OpenAIChat('gpt-3.5-turbo',  parameters=OpenAIChatParameters(temperature=0))
 # 控制每分钟最大请求次数为 20， 异步容量为 5
 client = LMClient(model, async_capacity=5, max_requests_per_minute=20)
 prompts = [
@@ -34,8 +37,17 @@ prompts = [
     [{'role': 'system', 'content': 'your are lmclient demo assistant'}, {'role': 'user', 'content': 'hello, who are you?'}],
     'what is your name?',
 ]
-values = client.async_run(prompts=prompts, temperature=0)
+values = client.run(prompts=prompts)
 print(values)
+```
+2. ChatEngine
+```python
+from lmclient import ChatEngine, OpenAIChat
+
+model = OpenAIChat('gpt-3.5-turbo')
+chat_engine = ChatEngine(model)
+print(chat_engine.chat('你好，我是 chat_engine'))
+print(chat_engine.chat('我上一句话是什么？')))
 ```
 
 ## 使用样例： 大规模翻译

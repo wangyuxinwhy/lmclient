@@ -1,81 +1,73 @@
 import anyio
 import pytest
 
-from lmclient.models import AzureChat, MinimaxChat, OpenAIChat, ZhiPuChat
-from lmclient.models.openai import OpenAIContentParser
+from lmclient.models import AzureChat, BaseChatModel, MinimaxProChat, OpenAIChat, WenxinChat, ZhiPuChat
+from lmclient.types import HttpChatModelOutput, Message, ModelParameters
 
 
-@pytest.mark.parametrize(
-    'prompt',
-    [
-        'Hello, my name is',
-        [{'role': 'system', 'content': 'your are lmclient demo assistant'}, {'role': 'user', 'content': 'hello, who are you?'}],
-    ],
-)
-def test_azure_model(prompt):
-    model = AzureChat(response_parser=OpenAIContentParser())
-
-    sync_output = model.chat(prompt)
-    async_output = anyio.run(model.async_chat, prompt)
+@pytest.mark.parametrize('chat_model', (AzureChat(), MinimaxProChat(), OpenAIChat(), ZhiPuChat(), WenxinChat()))
+def test_http_chat_model(chat_model: BaseChatModel[ModelParameters, HttpChatModelOutput]):
+    test_messages = [Message(role='user', content='hello')]
+    sync_output = chat_model.chat_completion(test_messages)
+    async_output = anyio.run(chat_model.async_chat_completion, test_messages)
 
     assert isinstance(sync_output.response, dict)
-    assert isinstance(sync_output.parsed_result, str)
+    assert isinstance(sync_output.reply, str)
     assert isinstance(async_output.response, dict)
-    assert isinstance(async_output.parsed_result, str)
+    assert isinstance(async_output.reply, str)
 
 
-@pytest.mark.parametrize(
-    'prompt',
-    [
-        'Hello, my name is',
-        [{'role': 'system', 'content': 'your are lmclient demo assistant'}, {'role': 'user', 'content': 'hello, who are you?'}],
-    ],
-)
-def test_openai_model(prompt):
-    chat_model = OpenAIChat('gpt-3.5-turbo', response_parser=OpenAIContentParser())
+# def test_azure_model():
+#     chat_model = AzureChat()
 
-    sync_output = chat_model.chat(prompt)
-    async_output = anyio.run(chat_model.async_chat, prompt)
+#     test_messages = [Message(role='user', content='hello')]
+#     sync_output = chat_model.chat_completion(test_messages)
+#     async_output = anyio.run(chat_model.async_chat_completion, test_messages)
 
-    assert isinstance(sync_output.response, dict)
-    assert isinstance(sync_output.parsed_result, str)
-    assert isinstance(async_output.response, dict)
-    assert isinstance(async_output.parsed_result, str)
+#     assert isinstance(sync_output.response, dict)
+#     assert isinstance(sync_output.reply, str)
+#     assert isinstance(async_output.response, dict)
+#     assert isinstance(async_output.reply, str)
 
 
-@pytest.mark.parametrize(
-    'prompt',
-    [
-        'Hello, my name is',
-        [{'role': 'system', 'content': 'your are lmclient demo assistant'}, {'role': 'user', 'content': 'hello, who are you?'}],
-    ],
-)
-def test_minimax_model(prompt):
-    completion_model = MinimaxChat('abab5.5-chat')
+# def test_openai_model():
+#     chat_model = OpenAIChat('gpt-3.5-turbo')
 
-    sync_output = completion_model.chat(prompt)
-    async_output = anyio.run(completion_model.async_chat, prompt)
+#     test_messages = [Message(role='user', content='hello')]
+#     sync_output = chat_model.chat_completion(test_messages)
+#     async_output = anyio.run(chat_model.async_chat_completion, test_messages)
 
-    assert isinstance(sync_output.response, dict)
-    assert isinstance(sync_output.parsed_result, str)
-    assert isinstance(async_output.response, dict)
-    assert isinstance(async_output.parsed_result, str)
+#     assert isinstance(sync_output.response, dict)
+#     assert isinstance(sync_output.reply, str)
+#     assert isinstance(async_output.response, dict)
+#     assert isinstance(async_output.reply, str)
 
 
-@pytest.mark.parametrize(
-    'prompt',
-    [
-        'Hello, my name is',
-        [{'role': 'user', 'content': 'hello, who are you?'}],
-    ],
-)
-def test_zhipu_model(prompt):
-    completion_model = ZhiPuChat()
+# def test_minimax_model():
+#     chat_model = MinimaxProChat()
 
-    sync_output = completion_model.chat(prompt)
-    async_output = anyio.run(completion_model.async_chat, prompt)
+#     test_messages = [Message(role='user', content='hello')]
+#     sync_output = chat_model.chat_completion(test_messages)
+#     async_output = anyio.run(chat_model.async_chat_completion, test_messages)
 
-    assert isinstance(sync_output.response, dict)
-    assert isinstance(sync_output.parsed_result, str)
-    assert isinstance(async_output.response, dict)
-    assert isinstance(async_output.parsed_result, str)
+#     assert isinstance(sync_output.response, dict)
+#     assert isinstance(sync_output.reply, str)
+#     assert isinstance(async_output.response, dict)
+#     assert isinstance(async_output.reply, str)
+
+
+# def test_zhipu_model():
+#     chat_model = ZhiPuChat()
+
+#     test_messages = [Message(role='user', content='hello')]
+#     sync_output = chat_model.chat_completion(test_messages)
+#     async_output = anyio.run(chat_model.async_chat_completion, test_messages)
+
+#     assert isinstance(sync_output.response, dict)
+#     assert isinstance(sync_output.reply, str)
+#     assert isinstance(async_output.response, dict)
+#     assert isinstance(async_output.reply, str)
+
+
+# def test_wenxin_model():
+#     WeninChat()
