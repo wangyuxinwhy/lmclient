@@ -48,9 +48,9 @@ class GeneralParameters(BaseModel):
 
 class ChatModelOutput(BaseModel):
     messages: Messages
+    reply: str = ''
     hash_key: str = ''
     is_cache: bool = False
-    reply: str = ''
 
 
 class ModelParameters(BaseModel):

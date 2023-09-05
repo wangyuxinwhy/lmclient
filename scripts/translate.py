@@ -5,8 +5,8 @@ from pathlib import Path
 
 import typer
 
-from lmclient import LMClient
-from lmclient.client import ErrorMode
+from lmclient import CompletionEngine
+from lmclient.completion_engine import ErrorMode
 from lmclient.models import load_from_model_id
 
 
@@ -26,7 +26,7 @@ def main(
     use_cache: bool = True,
 ) -> None:
     model = load_from_model_id(model_id=model_id, use_cache=use_cache)
-    client = LMClient(
+    client = CompletionEngine(
         model,  # type: ignore
         max_requests_per_minute=max_requests_per_minute,
         async_capacity=async_capacity,

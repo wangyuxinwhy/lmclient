@@ -1,24 +1,34 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar, Generic, Type, TypeVar, cast
 
 from typing_extensions import Self
 
-from lmclient.cache import ChatCacheMixin
+from lmclient.cache import DiskCache
 from lmclient.types import ChatModelOutput, Messages, ModelParameters
 from lmclient.utils import generate_chat_completion_hash_key
 
 T_P = TypeVar('T_P', bound=ModelParameters)
 T_O = TypeVar('T_O', bound=ChatModelOutput)
+DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
 
 
-class BaseChatModel(Generic[T_P, T_O], ChatCacheMixin, ABC):
+class BaseChatModel(Generic[T_P, T_O], ABC):
     model_type: ClassVar[str]
+    chat_cache: DiskCache[T_O] | None
+    parameters_type: Type[T_P]
 
-    def __init__(self, parameters: T_P, use_cache: Path | str | bool = False) -> None:
-        super().__init__(use_cache=use_cache)
+    def __init__(self, parameters: T_P, cache: Path | str | bool = False) -> None:
+        if cache is True:
+            self.chat_cache = DiskCache[T_O](DEFAULT_CACHE_DIR)
+        elif cache is False:
+            self.chat_cache = None
+        else:
+            self.chat_cache = DiskCache[T_O](cache)
+
         self.parameters = parameters
         self.parameters_type: Type[T_P] = parameters.__class__
 
@@ -50,9 +60,9 @@ class BaseChatModel(Generic[T_P, T_O], ChatCacheMixin, ABC):
         else:
             parameters = self.parameters
 
-        if self.use_cache:
+        if self.chat_cache is not None:
             hash_key = generate_chat_completion_hash_key(self.model_id, messages, parameters)
-            cached_output = self.try_load_model_output(hash_key)
+            cached_output = self.chat_cache.get(hash_key)
             if cached_output is not None:
                 cached_output.is_cache = True
                 cached_output.hash_key = hash_key
@@ -61,7 +71,7 @@ class BaseChatModel(Generic[T_P, T_O], ChatCacheMixin, ABC):
             else:
                 model_output = self._chat_completion(messages, parameters)
                 model_output.hash_key = hash_key
-                self.cache_model_output(hash_key, model_output)
+                self.chat_cache.save(hash_key, model_output)
                 return model_output
         else:
             model_output = self._chat_completion(messages, parameters)
@@ -73,9 +83,9 @@ class BaseChatModel(Generic[T_P, T_O], ChatCacheMixin, ABC):
         else:
             parameters = self.parameters
 
-        if self.use_cache:
+        if self.chat_cache is not None:
             hash_key = generate_chat_completion_hash_key(self.model_id, messages, parameters)
-            cached_output = self.try_load_model_output(hash_key)
+            cached_output = self.chat_cache.get(hash_key)
             if cached_output is not None:
                 cached_output.is_cache = True
                 cached_output = cast(T_O, cached_output)
@@ -83,7 +93,7 @@ class BaseChatModel(Generic[T_P, T_O], ChatCacheMixin, ABC):
             else:
                 model_output = await self._async_chat_completion(messages, parameters)
                 model_output.hash_key = hash_key
-                self.cache_model_output(hash_key, model_output)
+                self.chat_cache.save(hash_key, model_output)
                 return model_output
         else:
             model_output = await self._async_chat_completion(messages, parameters)

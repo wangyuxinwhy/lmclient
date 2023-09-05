@@ -24,7 +24,7 @@ class HttpChatModel(BaseChatModel[T_P, HttpChatModelOutput], ABC):
         retry: bool | RetryStrategy = False,
         use_cache: Path | str | bool = False,
     ):
-        super().__init__(parameters=parameters, use_cache=use_cache)
+        super().__init__(parameters=parameters, cache=use_cache)
         self.timeout = timeout
         if isinstance(retry, RetryStrategy):
             self.retry_strategy = retry

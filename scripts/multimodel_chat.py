@@ -10,7 +10,7 @@ chat_models = {
     'minimax': MinimaxProChat(),
     'zhipu': ZhiPuChat(),
 }
-engines = {model_name: ChatEngine(chat_model=chat_model) for model_name, chat_model in chat_models.items()} # type: ignore
+engines = {model_name: ChatEngine(chat_model=chat_model) for model_name, chat_model in chat_models.items()}   # type: ignore
 
 
 async def multimodel_chat(user_input: str):

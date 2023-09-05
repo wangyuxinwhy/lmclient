@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from lmclient.client import LMClient
+from lmclient.completion_engine import CompletionEngine
 from lmclient.models.base import BaseChatModel
 from lmclient.types import ChatModelOutput, Message, MessageDict, Messages, ModelParameters
 
@@ -39,7 +39,7 @@ class TestModel(BaseChatModel[TestModelParameters, ChatModelOutput]):
 
 def test_sync_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model)
+    client = CompletionEngine(completion_model)
     prompts = [
         'Hello, my name is',
         Message(role='user', content='hello, who are you?'),
@@ -54,8 +54,8 @@ def test_sync_completion():
 
 def test_async_completion():
     completion_model = TestModel()
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
-    LMClient.NUM_SECONDS_PER_MINUTE = 2
+    client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
+    CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
     messages: list[MessageDict] = [
@@ -72,8 +72,8 @@ def test_async_completion():
 
 def test_async_completion_with_cache(tmp_path: Path):
     completion_model = TestModel(use_cache=tmp_path)
-    client = LMClient(completion_model, async_capacity=2, max_requests_per_minute=5)
-    LMClient.NUM_SECONDS_PER_MINUTE = 2
+    client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
+    CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
     prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball'] * 4
@@ -84,4 +84,4 @@ def test_async_completion_with_cache(tmp_path: Path):
     assert results[3].reply == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time < 2
-    assert len(list(completion_model._cache)) == 3  # type: ignore
+    assert len(list(completion_model.chat_cache._diskcache)) == 3  # type: ignore
