@@ -52,7 +52,12 @@ class function:
         self.validate_func = validate_arguments(func)
         self.docstring = parse(self.func.__doc__ or '')
 
-        parameters = self.validate_func.model.model_json_schema()
+        self._validate_func_model: BaseModel = self.validate_func.model
+        try:
+            parameters = self._validate_func_model.model_json_schema()
+        except AttributeError:
+            parameters = self._validate_func_model.schema()
+
         parameters['properties'] = {
             k: v for k, v in parameters['properties'].items() if k not in ('v__duplicate_kwargs', 'args', 'kwargs')
         }
@@ -62,7 +67,7 @@ class function:
         parameters['required'] = sorted(k for k, v in parameters['properties'].items() if 'default' not in v)
         _remove_a_key(parameters, 'additionalProperties')
         _remove_a_key(parameters, 'title')
-        self.schema: FunctionDict = {
+        self.json_schema: FunctionDict = {
             'name': self.name,
             'description': self.docstring.short_description or '',
             'parameters': parameters,
@@ -87,8 +92,11 @@ class function:
 class BaseSchema(BaseModel):
     @classmethod
     @property
-    def openai_schema(cls):
-        schema = cls.model_json_schema()
+    def json_schema(cls):
+        try:
+            schema = cls.model_json_schema()
+        except AttributeError:
+            schema = cls.schema()
         docstring = parse(cls.__doc__ or '')
         parameters = {k: v for k, v in schema.items() if k not in ('title', 'description')}
         for param in docstring.params:

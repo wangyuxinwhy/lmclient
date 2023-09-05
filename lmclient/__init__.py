@@ -1,5 +1,5 @@
 from lmclient.chat_engine import ChatEngine
-from lmclient.client import LMClient
+from lmclient.completion_engine import CompletionEngine
 from lmclient.models import (
     AzureChat,
     MinimaxProChat,
@@ -14,6 +14,8 @@ from lmclient.models import (
 from lmclient.utils import BaseSchema, PydanticVersion, function
 from lmclient.version import __version__
 
+LMClient = CompletionEngine
+
 if PydanticVersion == 1:
     from pydantic import BaseModel
 
@@ -23,7 +25,7 @@ if PydanticVersion == 1:
 
 
 __all__ = [
-    'LMClient',
+    'CompletionEngine',
     'ChatEngine',
     'AzureChat',
     'OpenAIChat',

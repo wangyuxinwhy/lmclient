@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
 import time
 from enum import Enum
-from pathlib import Path
 from typing import ClassVar, Generic, NoReturn, Sequence, cast
 
 import anyio
@@ -13,8 +11,6 @@ import tqdm
 from lmclient.models import load_from_model_id
 from lmclient.models.base import T_O, T_P, BaseChatModel
 from lmclient.types import ChatModelOutput, Message, Messages, Prompt
-
-DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).expanduser().resolve()
 
 
 class ErrorMode(str, Enum):
@@ -45,7 +41,7 @@ def ensure_messages(prompt: Prompt) -> Messages:
         return messages
 
 
-class LMClient(Generic[T_P, T_O]):
+class CompletionEngine(Generic[T_P, T_O]):
     error_mode: ErrorMode
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
