@@ -9,7 +9,7 @@ import cachetools.func  # type: ignore
 import jwt
 
 from lmclient.exceptions import MessageError
-from lmclient.models.http import HttpChatModel, RetryStrategy
+from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.parser import ParserError
 from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
 
@@ -68,8 +68,9 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         retry: bool | RetryStrategy = False,
         parameters: ZhiPuChatParameters = ZhiPuChatParameters(),
         use_cache: Path | str | bool = False,
+        proxies: ProxiesTypes | None = None,
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
         self.api_base = api_base or os.getenv('ZHIPU_API_BASE') or 'https://open.bigmodel.cn/api/paas/v3/model-api'

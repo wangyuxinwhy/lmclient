@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, List, Optional, TypeVar, cast
 
 from lmclient.models import BaseChatModel, load_from_model_id
 from lmclient.types import ChatModelOutput, FunctionCallDict, GeneralParameters, Message, Messages, ModelParameters
@@ -23,7 +23,7 @@ class ChatEngine(Generic[T_P, T_O]):
         function_call_raise_error: bool = False,
     ):
         if isinstance(chat_model, str):
-            self._chat_model: BaseChatModel[T_P, T_O] = load_from_model_id(chat_model)  # type: ignore
+            self._chat_model = cast(BaseChatModel[T_P, T_O], load_from_model_id(chat_model))
         else:
             self._chat_model = chat_model
 
@@ -42,7 +42,8 @@ class ChatEngine(Generic[T_P, T_O]):
             function_call=function_call,
         )
         _parameters: T_P = self._chat_model.parameters_type.from_general_parameters(self.engine_parameters)
-        self._chat_model.parameters = self._chat_model.parameters.model_copy(update=_parameters.model_dump(exclude_unset=True))
+        self._chat_model.update_parameters(**_parameters.model_dump(exclude_unset=True))
+
         self.function_call_raise_error = function_call_raise_error
         self.history: Messages = []
 

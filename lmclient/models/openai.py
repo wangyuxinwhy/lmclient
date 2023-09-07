@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from typing_extensions import NotRequired, TypedDict
 
 from lmclient.exceptions import MessageError
-from lmclient.models.http import HttpChatModel, RetryStrategy
+from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.parser import ParserError
 from lmclient.types import FunctionCallDict, FunctionDict, GeneralParameters, Message, Messages, ModelParameters, ModelResponse
 
@@ -134,8 +134,9 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         retry: bool | RetryStrategy = False,
         parameters: OpenAIChatParameters = OpenAIChatParameters(),
         use_cache: Path | str | bool = False,
+        proxies: ProxiesTypes | None = None,
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model
         self.system_prompt = system_prompt
         self.api_base = api_base or os.getenv('OPENAI_API_BASE') or 'https://api.openai.com/v1'

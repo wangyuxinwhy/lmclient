@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from httpx._types import ProxiesTypes
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from lmclient.models.base import T_P, BaseChatModel
@@ -22,6 +23,7 @@ class HttpChatModel(BaseChatModel[T_P, HttpChatModelOutput], ABC):
         parameters: T_P,
         timeout: int | None = None,
         retry: bool | RetryStrategy = False,
+        proxies: ProxiesTypes | None = None,
         use_cache: Path | str | bool = False,
     ):
         super().__init__(parameters=parameters, cache=use_cache)
@@ -30,6 +32,7 @@ class HttpChatModel(BaseChatModel[T_P, HttpChatModelOutput], ABC):
             self.retry_strategy = retry
         else:
             self.retry_strategy = RetryStrategy() if retry else None
+        self.proxies = proxies
 
     @abstractmethod
     def get_request_parameters(self, messages: Messages, parameters: T_P) -> dict[str, Any]:
@@ -40,11 +43,12 @@ class HttpChatModel(BaseChatModel[T_P, HttpChatModelOutput], ABC):
         ...
 
     def _chat_completion_without_retry(self, messages: Messages, parameters: T_P) -> HttpChatModelOutput:
-        http_parameters = self.get_request_parameters(messages, parameters)
-        http_parameters = {'timeout': self.timeout, **http_parameters}
-        logger.info(f'HTTP Request: {http_parameters}')
-        http_response = httpx.post(**http_parameters)  # type: ignore
-        http_response.raise_for_status()
+        with httpx.Client(proxies=self.proxies) as client:
+            http_parameters = self.get_request_parameters(messages, parameters)
+            http_parameters = {'timeout': self.timeout, **http_parameters}
+            logger.info(f'HTTP Request: {http_parameters}')
+            http_response = client.post(**http_parameters)  # type: ignore
+            http_response.raise_for_status()
         model_response = http_response.json()
         logger.info(f'HTTP Response: {model_response}')
         new_messages = self.parse_model_reponse(model_response)
@@ -57,7 +61,7 @@ class HttpChatModel(BaseChatModel[T_P, HttpChatModelOutput], ABC):
         )
 
     async def _async_chat_completion_without_retry(self, messages: Messages, parameters: T_P) -> HttpChatModelOutput:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxies=self.proxies) as client:
             http_parameters = self.get_request_parameters(messages, parameters)
             http_parameters = {'timeout': self.timeout, **http_parameters}
             logger.info(f'ASYNC HTTP Request: {http_parameters}')

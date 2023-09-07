@@ -8,7 +8,7 @@ from pydantic import Field
 from typing_extensions import NotRequired, TypedDict
 
 from lmclient.exceptions import MessageError
-from lmclient.models.http import HttpChatModel, RetryStrategy
+from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.types import (
     FunctionCallDict,
     FunctionDict,
@@ -91,8 +91,9 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         retry: bool | RetryStrategy = False,
         parameters: MinimaxProChatParameters = MinimaxProChatParameters(),
         use_cache: Path | str | bool = False,
+        proxies: ProxiesTypes | None = None,
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model
         self.base_url = base_url
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
