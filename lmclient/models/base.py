@@ -98,3 +98,6 @@ class BaseChatModel(Generic[T_P, T_O], ABC):
         else:
             model_output = await self._async_chat_completion(messages, parameters)
             return model_output
+
+    def update_parameters(self, **kwargs: Any):
+        self.parameters = self.parameters.model_copy(update=kwargs)

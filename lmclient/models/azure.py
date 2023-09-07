@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from lmclient.models.http import HttpChatModel, RetryStrategy
+from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.models.openai import (
     OpenAIChatParameters,
     convert_lmclient_to_openai,
@@ -27,8 +27,9 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         retry: bool | RetryStrategy = False,
         parameters: OpenAIChatParameters = OpenAIChatParameters(),
         use_cache: Path | str | bool = False,
+        proxies: ProxiesTypes | None = None,
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
         self.system_prompt = system_prompt
         self.api_key = api_key or os.environ['AZURE_API_KEY']

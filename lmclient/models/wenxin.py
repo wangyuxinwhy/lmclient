@@ -10,8 +10,8 @@ import httpx
 from typing_extensions import Self, TypedDict
 
 from lmclient.exceptions import ResponseError
-from lmclient.models.http import HttpChatModel
-from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse, RetryStrategy
+from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
+from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
 
 WENXIN_ACCESS_TOKEN_URL = 'https://aip.baidubce.com/oauth/2.0/token'
 WENXIN_BASE_URL = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/'
@@ -55,8 +55,9 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         timeout: int | None = None,
         retry: bool | RetryStrategy = False,
         use_cache: Path | str | bool = False,
+        proxies: ProxiesTypes | None = None,
     ):
-        super().__init__(parameters, timeout, retry, use_cache)
+        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = self.normalize_model(model)
         self._api_key = api_key or os.getenv('WENXIN_API_KEY')
         self._secret_key = secret_key or os.getenv('WENXIN_SECRET_KEY')
