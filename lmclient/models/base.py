@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Generic, Type, TypeVar, cast
 
 from typing_extensions import Self
 
-from lmclient.cache import DiskCache
+from lmclient.cache import BaseCache, DiskCache
 from lmclient.types import ChatModelOutput, Messages, ModelParameters
 from lmclient.utils import generate_chat_completion_hash_key
 
@@ -18,16 +18,18 @@ DEFAULT_CACHE_DIR = Path(os.getenv('LMCLIENT_CACHE_DIR', '~/.cache/lmclient')).e
 
 class BaseChatModel(Generic[T_P, T_O], ABC):
     model_type: ClassVar[str]
-    chat_cache: DiskCache[T_O] | None
+    chat_cache: BaseCache[T_O] | None
     parameters_type: Type[T_P]
 
-    def __init__(self, parameters: T_P, cache: Path | str | bool = False) -> None:
+    def __init__(self, parameters: T_P, cache: Path | str | bool | BaseCache[T_O] = False) -> None:
         if cache is True:
             self.chat_cache = DiskCache[T_O](DEFAULT_CACHE_DIR)
         elif cache is False:
             self.chat_cache = None
-        else:
+        elif isinstance(cache, (str, Path)):
             self.chat_cache = DiskCache[T_O](cache)
+        else:
+            self.chat_cache = cache
 
         self.parameters = parameters
         self.parameters_type: Type[T_P] = parameters.__class__
