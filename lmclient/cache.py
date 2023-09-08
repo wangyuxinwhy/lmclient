@@ -8,7 +8,18 @@ import diskcache
 T = TypeVar('T')
 
 
-class DiskCache(Generic[T]):
+class BaseCache(Generic[T]):
+    def save(self, key: str, value: T) -> None:
+        raise NotImplementedError
+
+    def get(self, key: str) -> T | None:
+        raise NotImplementedError
+
+    def delete(self, key: str) -> None:
+        raise NotImplementedError
+
+
+class DiskCache(BaseCache[T]):
     _diskcache: diskcache.Cache | None
     _cache_dir: Path | None
 
@@ -26,9 +37,11 @@ class DiskCache(Generic[T]):
             model_output = cast(T, self._diskcache[key])
             return model_output
 
-    @property
-    def use_cache(self) -> bool:
-        return self._diskcache is not None
+    def delete(self, key: str) -> None:
+        if self._diskcache is not None:
+            del self._diskcache[key]
+        else:
+            raise RuntimeError('Cache is not enabled')
 
     @property
     def cache_dir(self) -> Path | None:
