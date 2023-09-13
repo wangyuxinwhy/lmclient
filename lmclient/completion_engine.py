@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import ClassVar, Generic, NoReturn, Sequence, cast
+from typing import AsyncGenerator, ClassVar, Generator, Generic, NoReturn, Sequence, cast
 
 import anyio
 import asyncer
@@ -65,24 +65,47 @@ class CompletionEngine(Generic[T_P, T_O]):
         self.progress_bar_mode = ProgressBarMode(progress_bar)
         self._task_created_time_list: list[int] = []
 
-    def run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
+    def run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> Generator[ChatModelOutput, None, None]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
-        task_results: list[ChatModelOutput] = []
         for prompt in prompts:
             task_result = self._run_single_task(
                 prompt=prompt, progress_bar=progress_bar, override_parameters=override_parameters
             )
-            task_results.append(task_result)
-        progress_bar.close()
-        return task_results
+            yield task_result
 
-    async def _async_run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
+        progress_bar.close()
+
+    def _run_single_task(
+        self, prompt: Prompt, progress_bar: tqdm.tqdm[NoReturn], override_parameters: T_P | None = None
+    ) -> ChatModelOutput:
+        messages = ensure_messages(prompt)
+
+        try:
+            output = self.chat_model.chat_completion(messages=messages, override_parameters=override_parameters)
+            if not output.is_cache:
+                sleep_time = self._calculate_sleep_time()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                self._task_created_time_list.append(int(time.time()))
+            progress_bar.update(1)
+            return output
+        except BaseException as e:
+            if self.error_mode is ErrorMode.RAISE:
+                raise
+            elif self.error_mode is ErrorMode.IGNORE:
+                return ChatModelOutput(messages=[Message(role='error', content=str(e))])
+            else:
+                raise ValueError(f'Unknown error mode: {self.error_mode}') from e
+
+    async def async_run(
+        self, prompts: Sequence[Prompt], override_parameters: T_P | None = None
+    ) -> AsyncGenerator[ChatModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
 
-        soon_values: list[asyncer.SoonValue[ChatModelOutput]] = []
         async with asyncer.create_task_group() as task_group:
+            soon_values: list[asyncer.SoonValue[ChatModelOutput]] = []
             soon_func = task_group.soonify(self._async_run_single_task)
             for prompt in prompts:
                 soon_value = soon_func(
@@ -93,13 +116,21 @@ class CompletionEngine(Generic[T_P, T_O]):
                     override_parameters=override_parameters,
                 )
                 soon_values.append(soon_value)
+            for soon_value in soon_values:
+                while not soon_value.ready:
+                    await anyio.sleep(0.01)
+                yield soon_value.value
 
         progress_bar.close()
-        values = [soon_value.value for soon_value in soon_values]
-        return values
 
-    def async_run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
-        return asyncer.runnify(self._async_run)(prompts, override_parameters)
+    def encapsulated_async_run(
+        self, prompts: Sequence[Prompt], override_parameters: T_P | None = None
+    ) -> list[ChatModelOutput]:
+        async def proxy_function():
+            results = [i async for i in self.async_run(prompts, override_parameters=override_parameters)]
+            return results
+
+        return anyio.run(proxy_function)
 
     async def _async_run_single_task(
         self,
@@ -129,28 +160,6 @@ class CompletionEngine(Generic[T_P, T_O]):
                     return ChatModelOutput(messages=[Message(role='error', content=f'Error: {e}')])
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}') from e
-
-    def _run_single_task(
-        self, prompt: Prompt, progress_bar: tqdm.tqdm[NoReturn], override_parameters: T_P | None = None
-    ) -> ChatModelOutput:
-        messages = ensure_messages(prompt)
-
-        try:
-            output = self.chat_model.chat_completion(messages=messages, override_parameters=override_parameters)
-            if not output.is_cache:
-                sleep_time = self._calculate_sleep_time()
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-                self._task_created_time_list.append(int(time.time()))
-            progress_bar.update(1)
-            return output
-        except BaseException as e:
-            if self.error_mode is ErrorMode.RAISE:
-                raise
-            elif self.error_mode is ErrorMode.IGNORE:
-                return ChatModelOutput(messages=[Message(role='error', content=str(e))])
-            else:
-                raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
     def _calculate_sleep_time(self):
         idx = 0

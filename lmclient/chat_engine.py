@@ -21,6 +21,7 @@ class ChatEngine(Generic[T_P, T_O]):
         top_p: float = 1,
         functions: Optional[List[function]] = None,
         function_call_raise_error: bool = False,
+        max_function_calls_per_turn: int = 5,
     ):
         if isinstance(chat_model, str):
             self._chat_model = cast(BaseChatModel[T_P, T_O], load_from_model_id(chat_model))
@@ -45,6 +46,7 @@ class ChatEngine(Generic[T_P, T_O]):
         self._chat_model.update_parameters(**_parameters.model_dump(exclude_unset=True))
 
         self.function_call_raise_error = function_call_raise_error
+        self.max_function_calls_per_turn = max_function_calls_per_turn
         self.history: Messages = []
 
     @property
@@ -100,7 +102,9 @@ class ChatEngine(Generic[T_P, T_O]):
             else:
                 return f'Error: {e}'
 
-    def _recursive_function_call(self, function_call: FunctionCallDict, override_parameters: T_P | None = None) -> str:
+    def _recursive_function_call(
+        self, function_call: FunctionCallDict, override_parameters: T_P | None = None, function_count: int = 0
+    ) -> str:
         function_output = self.run_function_call(function_call)
         self.history.append(
             Message(role='function', name=function_call['name'], content=json.dumps(function_output, ensure_ascii=False))
@@ -110,10 +114,13 @@ class ChatEngine(Generic[T_P, T_O]):
         if isinstance(reply := model_response.messages[-1].content, str):
             return reply
         else:
-            return self._recursive_function_call(reply, override_parameters)
+            function_count += 1
+            if function_count > self.max_function_calls_per_turn:
+                raise RuntimeError('Maximum number of function calls reached.')
+            return self._recursive_function_call(reply, override_parameters, function_count=function_count + 1)
 
     async def _async_recursive_function_call(
-        self, function_call: FunctionCallDict, override_parameters: T_P | None = None
+        self, function_call: FunctionCallDict, override_parameters: T_P | None = None, function_count: int = 0
     ) -> str:
         function_output = self.run_function_call(function_call)
         self.history.append(
@@ -124,6 +131,9 @@ class ChatEngine(Generic[T_P, T_O]):
         if isinstance(reply := model_response.messages[-1].content, str):
             return reply
         else:
+            function_count += 1
+            if function_count > self.max_function_calls_per_turn:
+                raise RuntimeError('Maximum number of function calls reached.')
             return self._recursive_function_call(reply, override_parameters)
 
     def reset(self) -> None:

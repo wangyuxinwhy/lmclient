@@ -1,4 +1,4 @@
-from lmclient import ChatEngine, MinimaxProChat, function
+from lmclient import ChatEngine, OpenAIChat, function
 
 
 @function
@@ -24,7 +24,7 @@ def google(keyword: str) -> str:
 
 
 def test_function():
-    model = MinimaxProChat()
+    model = OpenAIChat()
     engine = ChatEngine(model, temperature=0, functions=[get_weather, google])
     reply = engine.chat('今天北京天气怎么样？')
     assert '27' in reply

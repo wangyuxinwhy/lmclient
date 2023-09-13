@@ -35,11 +35,11 @@ prompts = [
     [{'role': 'user', 'content': 'hello, who are you?'}],
     'what is your name?',
 ]
-outputs = client.async_run(prompts=prompts)
+outputs = client.encapsulated_async_run(prompts=prompts)
 for output in outputs:
     print(output.reply)
-
 ```
+
 2. ChatEngine
 ```python
 from lmclient import ChatEngine, OpenAIChat
