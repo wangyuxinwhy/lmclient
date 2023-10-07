@@ -13,9 +13,6 @@ from lmclient.exceptions import ResponseError
 from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
 
-WENXIN_ACCESS_TOKEN_URL = 'https://aip.baidubce.com/oauth/2.0/token'
-WENXIN_BASE_URL = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/'
-
 
 class WenxinMessageDict(TypedDict):
     role: Literal['user', 'assistant']
@@ -45,11 +42,14 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         'ERNIE-Bot-turbo': 'eb-instant',
     }
     access_token_refresh_days: int = 20
+    access_token_url = 'https://aip.baidubce.com/oauth/2.0/token'
+    default_api_base = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/'
 
     def __init__(
         self,
         model: str = 'ERNIE-Bot',
         api_key: str | None = None,
+        api_base: str | None = None,
         secret_key: str | None = None,
         parameters: WenxinChatParameters = WenxinChatParameters(),
         timeout: int | None = None,
@@ -59,8 +59,9 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
     ):
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = self.normalize_model(model)
-        self._api_key = api_key or os.getenv('WENXIN_API_KEY')
-        self._secret_key = secret_key or os.getenv('WENXIN_SECRET_KEY')
+        self.api_base = api_base or self.default_api_base
+        self._api_key = api_key or os.environ['WENXIN_API_KEY']
+        self._secret_key = secret_key or os.environ['WENXIN_SECRET_KEY']
         self._access_token = self.get_access_token()
         self._access_token_expires_at = datetime.now() + timedelta(days=self.access_token_refresh_days)
 
@@ -70,7 +71,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
 
     @property
     def api_url(self) -> str:
-        return WENXIN_BASE_URL + self.model_name_entrypoint_map[self.model]
+        return self.api_base + self.model_name_entrypoint_map[self.model]
 
     @staticmethod
     def normalize_model(model: str):
@@ -81,10 +82,10 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         }
         return _map.get(model, model)
 
-    def get_access_token(self, base_url: str = WENXIN_ACCESS_TOKEN_URL) -> str:
+    def get_access_token(self) -> str:
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
         params = {'grant_type': 'client_credentials', 'client_id': self._api_key, 'client_secret': self._secret_key}
-        response = httpx.post(base_url, headers=headers, params=params)
+        response = httpx.post(self.access_token_url, headers=headers, params=params)
         response.raise_for_status()
         response_dict = response.json()
         if 'error' in response_dict:
@@ -124,4 +125,4 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
 
     @classmethod
     def from_name(cls, name: str, **kwargs: Any) -> Self:
-        return cls(model=name, **kwargs)
+        return cls(**kwargs)

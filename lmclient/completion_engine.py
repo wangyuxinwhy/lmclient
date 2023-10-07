@@ -97,7 +97,7 @@ class CompletionEngine(Generic[T_P, T_O]):
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
-    async def async_run(
+    async def native_async_run(
         self, prompts: Sequence[Prompt], override_parameters: T_P | None = None
     ) -> AsyncGenerator[ChatModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
@@ -123,11 +123,9 @@ class CompletionEngine(Generic[T_P, T_O]):
 
         progress_bar.close()
 
-    def encapsulated_async_run(
-        self, prompts: Sequence[Prompt], override_parameters: T_P | None = None
-    ) -> list[ChatModelOutput]:
+    def async_run(self, prompts: Sequence[Prompt], override_parameters: T_P | None = None) -> list[ChatModelOutput]:
         async def proxy_function():
-            results = [i async for i in self.async_run(prompts, override_parameters=override_parameters)]
+            results = [i async for i in self.native_async_run(prompts, override_parameters=override_parameters)]
             return results
 
         return anyio.run(proxy_function)

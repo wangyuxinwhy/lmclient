@@ -62,7 +62,7 @@ def test_async_completion():
         {'role': 'user', 'content': 'hello, who are you?'},
     ]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4
-    results = client.encapsulated_async_run(prompts)
+    results = client.async_run(prompts)
     elapsed_time = time.perf_counter() - start_time
 
     assert results[0].reply == 'Completed: Hello, my name is'
@@ -77,7 +77,7 @@ def test_async_completion_with_cache(tmp_path: Path):
 
     start_time = time.perf_counter()
     prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball'] * 4
-    results = client.encapsulated_async_run(prompts)
+    results = client.async_run(prompts)
     elapsed_time = time.perf_counter() - start_time
 
     assert isinstance(results[0].reply, str)
