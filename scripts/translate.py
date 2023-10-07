@@ -44,7 +44,7 @@ async def main(
 
     index = 0
     async with await open_file(output_file, 'w') as f:
-        async for result in client.async_run(prompts):
+        async for result in client.native_async_run(prompts):
             text = texts[index]
             await f.write(json.dumps({'text': text, 'translation': result.reply}, ensure_ascii=False) + '\n')
             await f.flush()

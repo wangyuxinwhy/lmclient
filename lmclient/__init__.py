@@ -2,6 +2,8 @@ from lmclient.chat_engine import ChatEngine
 from lmclient.completion_engine import CompletionEngine
 from lmclient.models import (
     AzureChat,
+    HunyuanChat,
+    HunyuanChatParameters,
     MinimaxProChat,
     MinimaxProChatParameters,
     OpenAIChat,
@@ -36,6 +38,8 @@ __all__ = [
     'ZhiPuChatParameters',
     'WenxinChat',
     'WenxinChatParameters',
+    'HunyuanChat',
+    'HunyuanChatParameters',
     'BaseSchema',
     'function',
     '__version__',

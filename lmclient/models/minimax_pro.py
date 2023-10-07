@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, ClassVar, Dict, List, Literal, Optional
 
 from pydantic import Field
 from typing_extensions import NotRequired, TypedDict
@@ -80,13 +80,14 @@ class MinimaxProChatParameters(ModelParameters):
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
     model_type = 'minimax_pro'
+    default_api_base: ClassVar[str] = 'https://api.minimax.chat/v1/text/chatcompletion_pro'
 
     def __init__(
         self,
         model: str = 'abab5.5-chat',
         group_id: str | None = None,
         api_key: str | None = None,
-        base_url: str = 'https://api.minimax.chat/v1/text/chatcompletion_pro',
+        api_base: str | None = None,
         timeout: int | None = 60,
         retry: bool | RetryStrategy = False,
         parameters: MinimaxProChatParameters = MinimaxProChatParameters(),
@@ -95,9 +96,9 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
     ):
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model
-        self.base_url = base_url
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
+        self.api_base = api_base or self.default_api_base
 
     def get_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> dict[str, Any]:
         headers = {
@@ -111,7 +112,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
             parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
         json_data.update(parameters_dict)
         return {
-            'url': self.base_url,
+            'url': self.api_base,
             'json': json_data,
             'headers': headers,
             'params': {'GroupId': self.group_id},

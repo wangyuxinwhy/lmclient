@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any, TypedDict, TypeVar
+from typing import Any, ClassVar, TypedDict, TypeVar
 
 import cachetools.func  # type: ignore
 import jwt
@@ -58,12 +58,13 @@ def generate_token(api_key: str):
 
 class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
     model_type = 'zhipu'
+    default_api_base: ClassVar[str] = 'https://open.bigmodel.cn/api/paas/v3/model-api'
 
     def __init__(
         self,
         model: str = 'chatglm_pro',
-        api_base: str | None = None,
         api_key: str | None = None,
+        api_base: str | None = None,
         timeout: int | None = 60,
         retry: bool | RetryStrategy = False,
         parameters: ZhiPuChatParameters = ZhiPuChatParameters(),
@@ -73,7 +74,7 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
-        self.api_base = api_base or os.getenv('ZHIPU_API_BASE') or 'https://open.bigmodel.cn/api/paas/v3/model-api'
+        self.api_base = api_base or self.default_api_base
         self.api_base.rstrip('/')
 
     def get_request_parameters(self, messages: Messages, parameters: ZhiPuChatParameters) -> dict[str, Any]:
