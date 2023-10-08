@@ -50,7 +50,7 @@ class MinimaxMessageDict(TypedDict):
 
 
 def default_bot_setting():
-    return [{'bot_name': 'MM智能助理', 'content': DEFAULT_MINIMAX_BOT_PROMPT}]
+    return [{'bot_name': DEFAULT_MINIMAX_BOT_NAME, 'content': DEFAULT_MINIMAX_BOT_PROMPT}]
 
 
 def default_reply_constrains():
