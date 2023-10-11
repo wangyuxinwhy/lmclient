@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, validator
 from typing_extensions import NotRequired, TypedDict
 
 from lmclient.exceptions import MessageError
@@ -21,7 +21,6 @@ from lmclient.types import (
 )
 
 DEFAULT_MINIMAX_BOT_NAME = 'MM智能助理'
-DEFAULT_MINIMAX_USER_NAME = '用户'
 DEFAULT_MINIMAX_BOT_PROMPT = 'MM智能助理是一款由MiniMax自研的，没有调用其他产品的接口的大型语言模型。MiniMax是一家中国科技公司，一直致力于进行大模型相关的研究。'
 
 
@@ -58,8 +57,8 @@ def default_reply_constrains():
 
 
 class MinimaxProChatParameters(ModelParameters):
-    bot_setting: List[BotSettingDict] = Field(default_factory=default_bot_setting)
     reply_constraints: ReplyConstrainsDict = Field(default_factory=default_reply_constrains)
+    bot_setting: List[BotSettingDict] = Field(default_factory=default_bot_setting)
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     tokens_to_generate: Optional[int] = None
@@ -77,6 +76,17 @@ class MinimaxProChatParameters(ModelParameters):
             functions=general_parameters.functions,
         )
 
+    @validator('bot_setting')
+    def check_bot_name(cls, v: list[BotSettingDict], values: dict[str, Any], **kwargs: Any) -> list[BotSettingDict]:
+        names: set[str] = {bot_setting['bot_name'] for bot_setting in v}
+        if len(v) == 1:
+            values['reply_constraints']['sender_name'] = v[0]['bot_name']
+            return v
+
+        if (sender_name := values['reply_constraints']['sender_name']) not in names:
+            raise ValueError(f'reply_constraints sender_name {sender_name} must be in bot_setting names: {names}')
+        return v
+
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
     model_type = 'minimax_pro'
@@ -88,13 +98,26 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         group_id: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
+        system_prompt: str | None = None,
+        default_user_name: str = '用户',
         timeout: int | None = 60,
         retry: bool | RetryStrategy = False,
         parameters: MinimaxProChatParameters = MinimaxProChatParameters(),
         use_cache: Path | str | bool = False,
         proxies: ProxiesTypes | None = None,
     ):
+        self.default_user_name = default_user_name
+        if len(parameters.bot_setting) == 1:
+            self.default_bot_name = parameters.bot_setting[0]['bot_name']
+            if system_prompt is not None:
+                parameters.bot_setting[0]['content'] = system_prompt
+        else:
+            self.default_bot_name = None
+            if system_prompt is not None:
+                raise ValueError('system_prompt is not supported when bot_setting has more than one bot')
+
         super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
+
         self.model = model
         self.group_id = group_id or os.environ['MINIMAX_GROUP_ID']
         self.api_key = api_key or os.environ['MINIMAX_API_KEY']
@@ -119,7 +142,10 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
     def parse_model_reponse(self, response: ModelResponse) -> Messages:
-        return [self._minimax_to_lmclient(i) for i in response['choices'][0]['messages']]
+        try:
+            return [self._minimax_to_lmclient(i) for i in response['choices'][0]['messages']]
+        except (KeyError, IndexError, TypeError) as e:
+            raise MessageError(f'Invalid response from Minimax: {response}') from e
 
     @staticmethod
     def _minimax_to_lmclient(message: MinimaxMessageDict) -> Message:
@@ -138,25 +164,26 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
                 content=message['text'],
             )
 
-    def _lmclient_to_minimax(
-        self,
-        message: Message,
-        default_bot_name: str = DEFAULT_MINIMAX_BOT_NAME,
-        default_user_name: str = DEFAULT_MINIMAX_USER_NAME,
-    ) -> MinimaxMessageDict:
+    def _lmclient_to_minimax(self, message: Message) -> MinimaxMessageDict:
         if isinstance(message.content, dict):
             if message.role != 'assistant':
                 raise MessageError(f'Invalid role {message.role} for function call, must be assistant')
+            sender_name = message.name or self.default_bot_name
+            if sender_name is None:
+                raise MessageError(f'Bot name is required for function call, message: {message}')
             return {
                 'sender_type': 'BOT',
-                'sender_name': message.name or default_bot_name,
+                'sender_name': sender_name,
                 'text': '',
                 'function_call': message.content,
             }
         elif message.role == 'assistant':
+            sender_name = message.name or self.default_bot_name
+            if sender_name is None:
+                raise MessageError(f'Bot name is required, message: {message}')
             return {
                 'sender_type': 'BOT',
-                'sender_name': message.name or default_bot_name,
+                'sender_name': sender_name,
                 'text': message.content,
             }
         elif message.role == 'function':
@@ -170,7 +197,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         elif message.role == 'user':
             return {
                 'sender_type': 'USER',
-                'sender_name': message.name or default_user_name,
+                'sender_name': message.name or self.default_user_name,
                 'text': message.content,
             }
         else:
