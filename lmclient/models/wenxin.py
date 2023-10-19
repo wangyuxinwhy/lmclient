@@ -40,6 +40,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         'llama_2_70b': 'llama_2_70b',
         'ERNIE-Bot': 'completions',
         'ERNIE-Bot-turbo': 'eb-instant',
+        'ERNIE-Bot-4': 'completions_pro',
     }
     access_token_refresh_days: int = 20
     access_token_url = 'https://aip.baidubce.com/oauth/2.0/token'
