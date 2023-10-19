@@ -91,7 +91,6 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         if 'temperature' in parameters_dict:
             parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
         json_data.update(parameters_dict)
-        print(json_data)
         return {
             'url': self.api_base,
             'json': json_data,
