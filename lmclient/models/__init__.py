@@ -3,6 +3,7 @@ from typing import Any
 from lmclient.models.azure import AzureChat
 from lmclient.models.base import BaseChatModel
 from lmclient.models.hunyuan import HunyuanChat, HunyuanChatParameters
+from lmclient.models.minimax import MinimaxChat, MinimaxChatParameters
 from lmclient.models.minimax_pro import MinimaxProChat, MinimaxProChatParameters
 from lmclient.models.openai import OpenAIChat, OpenAIChatParameters
 from lmclient.models.wenxin import WenxinChat, WenxinChatParameters
@@ -12,6 +13,7 @@ ModelRegistry = {
     AzureChat.model_type: AzureChat,
     OpenAIChat.model_type: OpenAIChat,
     MinimaxProChat.model_type: MinimaxProChat,
+    MinimaxChat.model_type: MinimaxChat,
     ZhiPuChat.model_type: ZhiPuChat,
     WenxinChat.model_type: WenxinChat,
     HunyuanChat.model_type: HunyuanChat,
@@ -36,6 +38,8 @@ __all__ = [
     'BaseChatModel',
     'MinimaxProChat',
     'MinimaxProChatParameters',
+    'MinimaxChat',
+    'MinimaxChatParameters',
     'OpenAIChat',
     'OpenAIChatParameters',
     'ZhiPuChat',

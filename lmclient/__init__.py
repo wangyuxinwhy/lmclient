@@ -4,6 +4,8 @@ from lmclient.models import (
     AzureChat,
     HunyuanChat,
     HunyuanChatParameters,
+    MinimaxChat,
+    MinimaxChatParameters,
     MinimaxProChat,
     MinimaxProChatParameters,
     OpenAIChat,
@@ -13,6 +15,7 @@ from lmclient.models import (
     ZhiPuChat,
     ZhiPuChatParameters,
 )
+from lmclient.types import GeneralParameters, Message, RetryStrategy
 from lmclient.utils import BaseSchema, PydanticVersion, function
 from lmclient.version import __version__
 
@@ -34,6 +37,8 @@ __all__ = [
     'OpenAIChatParameters',
     'MinimaxProChat',
     'MinimaxProChatParameters',
+    'MinimaxChat',
+    'MinimaxChatParameters',
     'ZhiPuChat',
     'ZhiPuChatParameters',
     'WenxinChat',
@@ -42,5 +47,8 @@ __all__ = [
     'HunyuanChatParameters',
     'BaseSchema',
     'function',
+    'GeneralParameters',
+    'Message',
+    'RetryStrategy',
     '__version__',
 ]

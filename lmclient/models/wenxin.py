@@ -104,6 +104,8 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
                 raise MessageError(f'Invalid message content: {content}, only string is allowed')
             message_dicts.append(WenxinMessageDict(content=content, role=role))
         parameters_dict = parameters.model_dump(exclude_none=True)
+        if 'temperature' in parameters_dict:
+            parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
         json_data = {'messages': message_dicts, **parameters_dict}
 
         return {

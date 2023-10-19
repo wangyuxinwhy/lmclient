@@ -1,11 +1,22 @@
 import anyio
 import pytest
 
-from lmclient.models import AzureChat, BaseChatModel, HunyuanChat, MinimaxProChat, OpenAIChat, WenxinChat, ZhiPuChat
+from lmclient.models import (
+    AzureChat,
+    BaseChatModel,
+    HunyuanChat,
+    MinimaxChat,
+    MinimaxProChat,
+    OpenAIChat,
+    WenxinChat,
+    ZhiPuChat,
+)
 from lmclient.types import HttpChatModelOutput, Message, ModelParameters
 
 
-@pytest.mark.parametrize('chat_model', (AzureChat(), MinimaxProChat(), OpenAIChat(), ZhiPuChat(), WenxinChat(), HunyuanChat()))
+@pytest.mark.parametrize(
+    'chat_model', (AzureChat(), MinimaxProChat(), MinimaxChat(), OpenAIChat(), ZhiPuChat(), WenxinChat(), HunyuanChat())
+)
 def test_http_chat_model(chat_model: BaseChatModel[ModelParameters, HttpChatModelOutput]):
     test_messages = [Message(role='user', content='hello')]
     sync_output = chat_model.chat_completion(test_messages)
