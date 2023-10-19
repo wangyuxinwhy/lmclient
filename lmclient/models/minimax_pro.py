@@ -41,7 +41,7 @@ class ReplyConstrainsDict(TypedDict):
     glyph: NotRequired[GlyphDict]
 
 
-class MinimaxMessageDict(TypedDict):
+class MinimaxProMessageDict(TypedDict):
     sender_type: Literal['USER', 'BOT', 'FUNCTION']
     sender_name: str
     text: str
@@ -63,7 +63,7 @@ class MinimaxProChatParameters(ModelParameters):
     top_p: Optional[float] = None
     tokens_to_generate: Optional[int] = None
     mask_sensitive_info: Optional[bool] = None
-    sample_messages: Optional[List[MinimaxMessageDict]] = None
+    sample_messages: Optional[List[MinimaxProMessageDict]] = None
     functions: Optional[List[FunctionDict]] = None
     plugins: Optional[List[str]] = None
 
@@ -148,7 +148,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
             raise MessageError(f'Invalid response from Minimax: {response}') from e
 
     @staticmethod
-    def _minimax_to_lmclient(message: MinimaxMessageDict) -> Message:
+    def _minimax_to_lmclient(message: MinimaxProMessageDict) -> Message:
         role_map: dict[str, Role] = {
             'USER': 'user',
             'BOT': 'assistant',
@@ -164,7 +164,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
                 content=message['text'],
             )
 
-    def _lmclient_to_minimax(self, message: Message) -> MinimaxMessageDict:
+    def _lmclient_to_minimax(self, message: Message) -> MinimaxProMessageDict:
         if isinstance(message.content, dict):
             if message.role != 'assistant':
                 raise MessageError(f'Invalid role {message.role} for function call, must be assistant')

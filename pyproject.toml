@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "lmclient-core"
-version = "0.8.1"
+version = "0.8.2"
 description = "LM Async Client, openai client, azure openai client ..."
 authors = ["wangyuxin <wangyuxin@mokahr.com>"]
 readme = "README.md"
@@ -37,6 +37,7 @@ select = [
 ignore = [
     "E501",  # line too long, handled by black
     "B008",  # do not perform function calls in argument defaults
+    "B905",  # zip strict
     "C901",  # too complex
 ]
 
