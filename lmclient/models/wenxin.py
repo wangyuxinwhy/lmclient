@@ -128,4 +128,4 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
 
     @classmethod
     def from_name(cls, name: str, **kwargs: Any) -> Self:
-        return cls(**kwargs)
+        return cls(model=name, **kwargs)
