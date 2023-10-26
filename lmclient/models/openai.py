@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import copy
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -9,7 +10,17 @@ from typing_extensions import NotRequired, TypedDict
 from lmclient.exceptions import MessageError
 from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.parser import ParserError
-from lmclient.types import FunctionCallDict, FunctionDict, GeneralParameters, Message, Messages, ModelParameters, ModelResponse
+from lmclient.types import (
+    FunctionCallDict,
+    FunctionDict,
+    GeneralParameters,
+    Message,
+    Messages,
+    ModelParameters,
+    ModelResponse,
+    is_function_call_message,
+    is_text_message,
+)
 
 
 class FunctionCallNameDict(TypedDict):
@@ -68,35 +79,37 @@ class OpenAIExtractParameters(ModelParameters):
         )
 
 
-def convert_lmclient_to_openai(message: Message, valid_roles: set[str] | None = None) -> OpenAIMessageDict:
-    valid_roles = valid_roles or {'user', 'assistant', 'function', 'system'}
-    if message.role not in valid_roles:
-        raise MessageError(f'Invalid role "{message.role}", supported roles are {valid_roles}')
+def format_message_to_openai(message: Message) -> OpenAIMessageDict:
+    role = message.role
+    if role == 'error':
+        raise MessageError(f'Invalid message role: {role}, only "user", "assistant", "system" and "function" are allowed')
 
-    content = message.content
-
-    if isinstance(content, dict):
-        if message.role != 'assistant':
-            raise MessageError(f'Invalid role "{message.role}" for function call, can only be made by "assistant"')
+    if is_function_call_message(message):
+        function_call = copy(message.content)
+        if 'thoughts' in function_call:
+            function_call.pop('thoughts')
         return {
-            'role': message.role,
-            'function_call': content,
+            'role': 'assistant',
+            'function_call': function_call,
             'content': None,
         }
-    elif message.role == 'function':
-        name = message.name
-        if name is None:
-            raise MessageError(f'Function name is required, message: {message}')
-        return {
-            'role': message.role,
-            'name': name,
-            'content': content,
-        }
+    elif is_text_message(message):
+        if role == 'function':
+            name = message.name
+            if name is None:
+                raise MessageError(f'Function name is required, message: {message}')
+            return {
+                'role': role,
+                'name': name,
+                'content': message.content,
+            }
+        else:
+            return {
+                'role': role,
+                'content': message.content,
+            }
     else:
-        return {
-            'role': message.role,
-            'content': content,
-        }
+        raise MessageError(f'Invalid message type: {message}')
 
 
 def parse_openai_model_reponse(response: ModelResponse) -> Messages:
@@ -147,7 +160,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
             'Authorization': f'Bearer {self.api_key}',
         }
         parameters_dict = parameters.model_dump(exclude_defaults=True)
-        openai_messages = [convert_lmclient_to_openai(message) for message in messages]
+        openai_messages = [format_message_to_openai(message) for message in messages]
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {

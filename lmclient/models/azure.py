@@ -7,7 +7,7 @@ from typing import Any
 from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
 from lmclient.models.openai import (
     OpenAIChatParameters,
-    convert_lmclient_to_openai,
+    format_message_to_openai,
     parse_openai_model_reponse,
 )
 from lmclient.types import Messages, ModelResponse
@@ -41,7 +41,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
             'api-key': self.api_key,
         }
         parameters_dict = parameters.model_dump(exclude_defaults=True)
-        openai_messages = [convert_lmclient_to_openai(message) for message in messages]
+        openai_messages = [format_message_to_openai(message) for message in messages]
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {

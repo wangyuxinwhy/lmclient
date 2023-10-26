@@ -3,33 +3,58 @@ from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import NotRequired, Self, TypedDict
+from typing_extensions import NotRequired, Self, TypedDict, TypeGuard
+
+from lmclient.exceptions import MessageError
 
 Messages = List['Message']
 ModelResponse = Dict[str, Any]
 Prompt = Union[str, 'Message', 'MessageDict', Sequence[Union['MessageDict', 'Message']]]
-Role = Literal['user', 'assistant', 'function', 'error']
+Role = Literal['user', 'assistant', 'function', 'error', 'system']
 
 
 class FunctionDict(TypedDict):
     name: str
     description: NotRequired[str]
     parameters: Dict[str, Any]
+    responses: NotRequired[Dict[str, str]]
+    examples: NotRequired[List[MessageDict]]
 
 
 class FunctionCallDict(TypedDict):
     name: str
     arguments: str
+    thoughts: NotRequired[str]
+
+
+class FunctionCallMessage(BaseModel):
+    role: Literal['assitant']
+    name: Optional[str] = None
+    content: FunctionCallDict
+
+
+class TextMessage(BaseModel):
+    role: Role
+    name: Optional[str] = None
+    content: str
 
 
 class Message(BaseModel):
     role: Role
-    content: Union[str, FunctionCallDict]
     name: Optional[str] = None
+    content: Union[str, FunctionCallDict]
 
-    @property
-    def is_function_call(self) -> bool:
-        return isinstance(self.content, dict)
+
+def is_function_call_message(message: Message) -> TypeGuard[FunctionCallMessage]:
+    if isinstance(message.content, dict):
+        if message.role != 'assistant':
+            raise MessageError(f'Invalid role "{message.role}" for function call, can only be made by "assistant"')
+        return True
+    return False
+
+
+def is_text_message(message: Message) -> TypeGuard[TextMessage]:
+    return isinstance(message.content, str)
 
 
 class MessageDict(TypedDict):
