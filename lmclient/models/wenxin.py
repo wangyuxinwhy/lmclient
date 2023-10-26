@@ -4,31 +4,110 @@ import os
 from datetime import datetime, timedelta
 from email.errors import MessageError
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
-from typing_extensions import Self, TypedDict
+from typing_extensions import NotRequired, Self, TypedDict
 
 from lmclient.exceptions import ResponseError
 from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
-from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
+from lmclient.types import (
+    GeneralParameters,
+    Message,
+    Messages,
+    ModelParameters,
+    ModelResponse,
+    is_function_call_message,
+    is_text_message,
+)
 
 
 class WenxinMessageDict(TypedDict):
-    role: Literal['user', 'assistant']
+    role: Literal['user', 'assistant', 'function']
     content: str
+    name: NotRequired[str]
+    function_call: NotRequired[WenxinFunctionCallDict]
+
+
+class WenxinFunctionCallDict(TypedDict):
+    name: str
+    arguments: str
+    thoughts: NotRequired[str]
+
+
+class WenxinFunctionDict(TypedDict):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    responses: NotRequired[Dict[str, str]]
+    examples: NotRequired[List[WenxinMessageDict]]
+
+
+def format_message_to_wenxin(message: Message) -> WenxinMessageDict:
+    role = message.role
+    if role == 'error' or role == 'system':
+        raise MessageError(f'Invalid message role: {role}, only "user", "assistant" and "function" are allowed')
+
+    if is_function_call_message(message):
+        return {
+            'role': 'assistant',
+            'function_call': {
+                'name': message.content['name'],
+                'arguments': message.content['arguments'],
+                'thoughts': message.content.get('thoughts', ''),
+            },
+            'content': '',
+        }
+    elif is_text_message(message):
+        if role == 'function':
+            name = message.name
+            if name is None:
+                raise MessageError(f'Function name is required, message: {message}')
+            return {
+                'role': role,
+                'name': name,
+                'content': message.content,
+            }
+        else:
+            return {
+                'role': role,
+                'content': message.content,
+            }
+    else:
+        raise MessageError(f'Invalid message type: {message}')
 
 
 class WenxinChatParameters(ModelParameters):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
+    functions: Optional[List[WenxinFunctionDict]] = None
     penalty_score: Optional[float] = None
+    system: Optional[str] = None
+    user_id: Optional[str] = None
 
     @classmethod
     def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
+        if general_parameters.functions is not None:
+            wenxin_functions: list[WenxinFunctionDict] | None = []
+            for general_function in general_parameters.functions:
+                wenxin_function = WenxinFunctionDict(
+                    name=general_function['name'],
+                    description=general_function.get('description', ''),
+                    parameters=general_function['parameters'],
+                )
+                if 'responses' in general_function:
+                    wenxin_function['responses'] = general_function['responses']
+                if 'examples' in general_function:
+                    messages = [Message(**message_dict) for message_dict in general_function['examples']]
+                    wenxin_messages = [format_message_to_wenxin(message) for message in messages]
+                    wenxin_function['examples'] = wenxin_messages
+                wenxin_functions.append(wenxin_function)
+        else:
+            wenxin_functions = None
         return cls(
             temperature=general_parameters.temperature,
             top_p=general_parameters.top_p,
+            functions=wenxin_functions,
         )
 
 
@@ -96,14 +175,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
     def get_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> dict[str, Any]:
         self.maybe_refresh_access_token()
 
-        message_dicts: list[WenxinMessageDict] = []
-        for message in messages:
-            role = message.role
-            if role != 'assistant' and role != 'user':
-                raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
-            if not isinstance(content := message.content, str):
-                raise MessageError(f'Invalid message content: {content}, only string is allowed')
-            message_dicts.append(WenxinMessageDict(content=content, role=role))
+        message_dicts: list[WenxinMessageDict] = [format_message_to_wenxin(message) for message in messages]
         parameters_dict = parameters.model_dump(exclude_none=True)
         if 'temperature' in parameters_dict:
             parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
@@ -119,7 +191,12 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
     def parse_model_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error_msg'):
             raise ResponseError(response['error_msg'])
-        return [Message(role='assistant', content=response['result'])]
+        if response.get('function_call'):
+            arguments = response['function_call']['arguments']
+            name = response['function_call']['name']
+            return [Message(role='assistant', content={'name': name, 'arguments': arguments})]
+        else:
+            return [Message(role='assistant', content=response['result'])]
 
     def maybe_refresh_access_token(self):
         if self._access_token_expires_at < datetime.now():
@@ -128,4 +205,4 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
 
     @classmethod
     def from_name(cls, name: str, **kwargs: Any) -> Self:
-        return cls(**kwargs)
+        return cls(model=name, **kwargs)
