@@ -3,6 +3,7 @@ import pytest
 
 from lmclient.models import (
     AzureChat,
+    BaichuanChat,
     BaseChatModel,
     HunyuanChat,
     MinimaxChat,
@@ -15,7 +16,8 @@ from lmclient.types import HttpChatModelOutput, Message, ModelParameters
 
 
 @pytest.mark.parametrize(
-    'chat_model', (AzureChat(), MinimaxProChat(), MinimaxChat(), OpenAIChat(), ZhiPuChat(), WenxinChat(), HunyuanChat())
+    'chat_model',
+    (AzureChat(), MinimaxProChat(), MinimaxChat(), OpenAIChat(), ZhiPuChat(), WenxinChat(), HunyuanChat(), BaichuanChat()),
 )
 def test_http_chat_model(chat_model: BaseChatModel[ModelParameters, HttpChatModelOutput]):
     test_messages = [Message(role='user', content='hello')]
