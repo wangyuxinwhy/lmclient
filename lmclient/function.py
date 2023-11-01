@@ -6,61 +6,48 @@ from functools import wraps
 from typing import Any, Callable
 
 from docstring_parser import parse
-from pydantic import BaseModel, validate_arguments
+from pydantic import TypeAdapter, validate_call
 
-from lmclient.exceptions import MessageError
 from lmclient.types import Function, Message
+from lmclient.utils import is_function_call_message
 
 
 class function:
-    def __init__(self, func: Callable) -> None:
-        self.func = func
-        self.name = self.func.__name__
-        self.validate_func = validate_arguments(func)
-        self.docstring = parse(self.func.__doc__ or '')
-
-        self._validate_func_model: BaseModel = self.validate_func.model
-        try:
-            parameters = self._validate_func_model.model_json_schema()
-        except AttributeError:
-            parameters = self._validate_func_model.schema()
-
-        parameters['properties'] = {
-            k: v for k, v in parameters['properties'].items() if k not in ('v__duplicate_kwargs', 'args', 'kwargs')
-        }
+    def __init__(self, callable: Callable) -> None:
+        self.callable = validate_call(callable)
+        self.name = self.callable.__name__
+        self.docstring = parse(self.callable.__doc__ or '')
+        parameters = TypeAdapter(callable).json_schema()
         for param in self.docstring.params:
             if (name := param.arg_name) in parameters['properties'] and (description := param.description):
                 parameters['properties'][name]['description'] = description
         parameters['required'] = sorted(k for k, v in parameters['properties'].items() if 'default' not in v)
-        _remove_a_key(parameters, 'additionalProperties')
-        _remove_a_key(parameters, 'title')
+        recusive_remove(parameters, 'additionalProperties')
+        recusive_remove(parameters, 'title')
         self.json_schema: Function = {
             'name': self.name,
             'description': self.docstring.short_description or '',
             'parameters': parameters,
         }
-        self.model = self.validate_func.model
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        @wraps(self.func)
+        @wraps(self.callable)
         def wrapper(*args, **kwargs):
-            return self.validate_func(*args, **kwargs)
-
+            return self.callable(*args, **kwargs)
         return wrapper(*args, **kwargs)
 
-    def from_message(self, message: Message):
-        function_call = message.content
-        if isinstance(function_call, str):
-            raise MessageError(f'{message} is not a valid function call message')
-        arguments = json.loads(function_call['arguments'], strict=False)
-        return self.validate_func(**arguments)
+    def call_with_message(self, message: Message):
+        if is_function_call_message(message):
+            function_call = message['content']
+            arguments = json.loads(function_call['arguments'], strict=False)
+            return self.callable(**arguments)
+        raise ValueError(f'message is not a function call: {message}')
 
-
-def _remove_a_key(d, remove_key) -> None:
+def recusive_remove(object: Any, remove_key: str) -> None:
     """Remove a key from a dictionary recursively"""
-    if isinstance(d, dict):
-        for key in list(d.keys()):
+    if isinstance(object, dict):
+        for key in list(object.keys()):
             if key == remove_key:
-                del d[key]
+                del object[key]
             else:
-                _remove_a_key(d[key], remove_key)
+                recusive_remove(object[key], remove_key)
