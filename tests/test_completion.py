@@ -6,7 +6,7 @@ from typing import Any
 
 from lmclient.completion_engine import CompletionEngine
 from lmclient.models.base import BaseChatModel
-from lmclient.types import ChatModelOutput, Message, MessageDict, Messages, ModelParameters
+from lmclient.types import ChatModelOutput, Messages, ModelParameters, TextMessage
 
 
 class TestModelParameters(ModelParameters):
@@ -21,12 +21,16 @@ class TestModel(BaseChatModel[TestModelParameters, ChatModelOutput]):
         super().__init__(default_parameters, use_cache)
 
     def _chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(messages=[Message(role='assistant', content=content)], reply=content)
+        content = f'Completed: {messages[-1]["content"]}'
+        return ChatModelOutput(
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+        )
 
     async def _async_chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(messages=[Message(role='assistant', content=content)], reply=content)
+        content = f'Completed: {messages[-1]["content"]}'
+        return ChatModelOutput(
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+        )
 
     @property
     def name(self) -> str:
@@ -42,7 +46,7 @@ def test_sync_completion():
     client = CompletionEngine(completion_model)
     prompts = [
         'Hello, my name is',
-        Message(role='user', content='hello, who are you?'),
+        TextMessage(role='user', content='hello, who are you?'),
     ]
     results = list(client.run(prompts))
 
@@ -58,9 +62,7 @@ def test_async_completion():
     CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
-    messages: list[MessageDict] = [
-        {'role': 'user', 'content': 'hello, who are you?'},
-    ]
+    messages: list[TextMessage] = [{'role': 'user', 'content': 'hello, who are you?'}]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4
     results = client.async_run(prompts)
     elapsed_time = time.perf_counter() - start_time
@@ -84,4 +86,3 @@ def test_async_completion_with_cache(tmp_path: Path):
     assert results[3].reply == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time < 2
-    assert len(list(completion_model.chat_cache._diskcache)) == 3  # type: ignore

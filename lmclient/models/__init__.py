@@ -2,7 +2,7 @@ from typing import Any
 
 from lmclient.models.azure import AzureChat
 from lmclient.models.baichuan import BaichuanChat, BaichuanChatParameters
-from lmclient.models.base import BaseChatModel
+from lmclient.models.base import BaseChatModel, OverrideParameters
 from lmclient.models.hunyuan import HunyuanChat, HunyuanChatParameters
 from lmclient.models.minimax import MinimaxChat, MinimaxChatParameters
 from lmclient.models.minimax_pro import MinimaxProChat, MinimaxProChatParameters
@@ -36,6 +36,7 @@ def list_chat_model_types():
 
 
 __all__ = [
+    'OverrideParameters',
     'AzureChat',
     'BaseChatModel',
     'MinimaxProChat',

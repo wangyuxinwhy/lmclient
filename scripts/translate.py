@@ -25,7 +25,7 @@ async def main(
     model_id: str = 'openai',
     max_requests_per_minute: int = 10,
     async_capacity: int = 3,
-    error_mode: ErrorMode = ErrorMode.RAISE,
+    error_mode: ErrorMode = 'raise',
     use_cache: bool = True,
 ) -> None:
     model = load_from_model_id(model_id=model_id, use_cache=use_cache)

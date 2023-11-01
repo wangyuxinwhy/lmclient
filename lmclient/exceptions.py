@@ -6,5 +6,5 @@ class MessageError(Exception):
     pass
 
 
-class ResponseError(Exception):
+class ResponseFailedError(Exception):
     pass
