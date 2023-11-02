@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing_extensions import TypeGuard
 
 from lmclient.types import (
+    ChatModelOutput,
+    ChatModelStreamOutput,
     FunctionCallMessage,
     Message,
     Messages,
@@ -18,6 +20,10 @@ def is_function_call_message(message: Message) -> TypeGuard[FunctionCallMessage]
 
 def is_text_message(message: Message) -> TypeGuard[TextMessage]:
     return isinstance(message['content'], str)
+
+
+def is_stream_model_output(model_output: ChatModelOutput) -> TypeGuard[ChatModelStreamOutput]:
+    return getattr(model_output, 'stream', None) is not None
 
 
 def ensure_messages(prompt: Prompt) -> Messages:
