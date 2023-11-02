@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Generic, List, Literal, Optional, TypedDict, TypeVar
 
-from typing_extensions import Self, Unpack
+from typing_extensions import Self, Unpack, overload
 
 from lmclient.function import function
 from lmclient.models import BaseChatModel, OverrideParameters, load_from_model_id
@@ -84,7 +84,15 @@ class ChatEngine(Generic[T_P]):
     def print_message(self):
         return self.printer is not None
 
-    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any) -> str:
+    @overload
+    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[False] = False, **kwargs: Any) -> None:
+        ...
+
+    @overload
+    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[True] = True, **kwargs: Any) -> str:
+        ...
+
+    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: bool = False, **kwargs: Any) -> str | None:
         self._function_call_count = 0
 
         user_input_message = TextMessage(role='user', content=user_input)
@@ -106,10 +114,13 @@ class ChatEngine(Generic[T_P]):
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
             reply = last_message['content']
-            return reply
+            if return_reply:
+                return reply
         elif is_function_call_message(last_message):
             function_call = last_message['content']
-            return self._recursive_function_call(function_call, override_parameters, **kwargs)
+            reply =  self._recursive_function_call(function_call, override_parameters, **kwargs)
+            if return_reply:
+                return reply
         else:
             raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
@@ -124,7 +135,15 @@ class ChatEngine(Generic[T_P]):
             if stream_output.is_finish:
                 return stream_output
 
-    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any) -> str:
+    @overload
+    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[False] = False, **kwargs: Any) -> None:
+        ...
+
+    @overload
+    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[True] = True, **kwargs: Any) -> str:
+        ...
+
+    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: bool = False, **kwargs: Any) -> str | None:
         self._function_call_count = 0
 
         user_input_message = TextMessage(role='user', content=user_input)
@@ -148,10 +167,13 @@ class ChatEngine(Generic[T_P]):
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
             reply = last_message['content']
-            return reply
+            if return_reply:
+                return reply
         elif is_function_call_message(last_message):
             function_call = last_message['content']
-            return await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
+            reply = await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
+            if return_reply:
+                return reply
         else:
             raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
