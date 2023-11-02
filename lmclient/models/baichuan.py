@@ -11,7 +11,16 @@ from typing_extensions import Annotated, Unpack, override
 
 from lmclient.exceptions import MessageError, ResponseFailedError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import Message, Messages, ModelParameters, ModelResponse, Probability, Temperature, TextMessage
+from lmclient.types import (
+    Message,
+    Messages,
+    ModelParameters,
+    ModelResponse,
+    Probability,
+    Stream,
+    Temperature,
+    TextMessage,
+)
 from lmclient.utils import is_text_message
 
 
@@ -29,7 +38,9 @@ class BaichuanChatParameters(ModelParameters):
 
 class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
     model_type: ClassVar[str] = 'zhipu'
+    stream_model = 'basic'
     default_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/chat'
+    default_stream_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/stream/chat'
 
     def __init__(
         self,
@@ -37,6 +48,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         api_key: str | None = None,
         secret_key: str | None = None,
         api_base: str | None = None,
+        stream_api_base: str | None = None,
         parameters: BaichuanChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
     ):
@@ -47,6 +59,9 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         self.secret_key = secret_key or os.environ['BAICHUAN_SECRET_KEY']
         self.api_base = api_base or self.default_api_base
         self.api_base.rstrip('/')
+        self.stream_api_base = stream_api_base or self.default_stream_api_base
+        self.stream_api_base.rstrip('/')
+        self._stream_start = False
 
     @override
     def get_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> HttpxPostKwargs:
@@ -75,6 +90,19 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
             'json': data,
         }
 
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['url'] = self.stream_api_base
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        message = response['data']['messages'][0]
+        if message['finish_reason']:
+            return Stream(delta=message['content'], control='finish')
+        return Stream(delta=message['content'], control='continue')
+
     @staticmethod
     def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
         if not is_text_message(message):
@@ -96,7 +124,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         return encrypted
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             text = response['data']['messages'][-1]['content']
             return [TextMessage(role='assistant', content=text)]

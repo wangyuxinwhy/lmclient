@@ -17,6 +17,7 @@ from lmclient.types import (
     ModelParameters,
     ModelResponse,
     Probability,
+    Stream,
     Temperature,
     TextMessage,
 )
@@ -125,6 +126,7 @@ def parse_openai_model_reponse(response: ModelResponse) -> Messages:
 
 class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
     model_type: ClassVar[str] = 'openai'
+    support_stream: ClassVar[bool] = True
     default_api_base: ClassVar[str] = 'https://api.openai.com/v1'
 
     def __init__(
@@ -164,8 +166,27 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
+
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        if response.get('data') == '[DONE]':
+            return Stream(delta='', control='done')
+        else:
+            delta = response['choices'][0]['delta']
+            if 'role' in delta:
+                return Stream(delta='', control='start')
+            elif 'content' in delta:
+                return Stream(delta=delta['content'], control='continue')
+            else:
+                return Stream(delta='', control='finish')
 
     @property
     @override

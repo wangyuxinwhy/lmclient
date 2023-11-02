@@ -36,7 +36,18 @@ def test_http_chat_model(chat_model: HttpChatModel[ModelParameters], parameters:
     sync_output = chat_model.chat_completion(test_messages, override_parameters=parameters)
     async_output = anyio.run(chat_model.async_chat_completion, test_messages)
 
-    assert isinstance(sync_output.response, dict)
-    assert isinstance(sync_output.reply, str)
-    assert isinstance(async_output.response, dict)
-    assert isinstance(async_output.reply, str)
+    assert sync_output.reply != ''
+    assert async_output.reply != ''
+
+
+@pytest.mark.parametrize(
+    'chat_model',
+    (MinimaxProChat(), MinimaxChat(), OpenAIChat(), ZhiPuChat(), WenxinChat(), HunyuanChat(), BaichuanChat()),
+)
+def test_http_stream_chat_model(chat_model: HttpChatModel[ModelParameters]):
+    chat_model.timeout = 10
+    test_messages = [TextMessage(role='user', content='这是测试，只回复你好')]
+    sync_output = list(chat_model.stream_chat_completion(test_messages))[-1]
+
+    assert sync_output.stream.control == 'finish' or sync_output.stream.control == 'done'
+    assert sync_output.reply != ''

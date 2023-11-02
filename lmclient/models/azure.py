@@ -11,7 +11,7 @@ from lmclient.models.openai import (
     convert_to_openai_message,
     parse_openai_model_reponse,
 )
-from lmclient.types import Messages, ModelResponse
+from lmclient.types import Messages, ModelResponse, Stream
 
 
 class AzureChat(HttpChatModel[OpenAIChatParameters]):
@@ -56,7 +56,17 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        raise NotImplementedError('Azure does not support streaming')
+
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
 
     @property

@@ -12,7 +12,7 @@ from typing import Any, ClassVar, Literal, Optional
 from typing_extensions import Self, TypedDict, Unpack, override
 
 from lmclient.exceptions import ResponseFailedError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs, ModelResponse
+from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs, ModelResponse, Stream
 from lmclient.types import Message, Messages, ModelParameters, Probability, Temperature, TextMessage
 from lmclient.utils import is_text_message
 
@@ -42,6 +42,7 @@ def convert_to_hunyuan_message(message: Message) -> HunyuanMessage:
 
 class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
     model_type: ClassVar[str] = 'hunyuan'
+    # stream_model = 'basic'
     default_api: ClassVar[str] = 'https://hunyuan.cloud.tencent.com/hyllm/v1/chat/completions'
     default_sign_api: ClassVar[str] = 'hunyuan.cloud.tencent.com/hyllm/v1/chat/completions'
 
@@ -79,12 +80,34 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def get_stream_request_parameters(self, messages: Messages, parameters: HunyuanChatParameters) -> HttpxPostKwargs:
+        hunyuan_messages = [convert_to_hunyuan_message(message) for message in messages]
+        json_dict = self.generate_json_dict(hunyuan_messages, parameters, stream=True)
+        signature = self.generate_signature(self.generate_sign_parameters(json_dict))
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': signature,
+        }
+        return {
+            'url': self.api,
+            'headers': headers,
+            'json': json_dict,
+        }
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        message = response['choices'][0]
+        if message['finish_reason']:
+            return Stream(delta=message['delta']['content'], control='finish')
+        return Stream(delta=message['delta']['content'], control='continue')
+
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error'):
             raise ResponseFailedError(f'code: {response["error"]["code"]}, message: {response["error"]["message"]}')
         return [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
 
-    def generate_json_dict(self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters):
+    def generate_json_dict(self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters, stream: bool = False):
         timestamp = int(time.time()) + 10000
         json_dict: dict[str, Any] = {
             'app_id': self.app_id,
@@ -93,7 +116,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
             'messages': messages,
             'timestamp': timestamp,
             'expired': timestamp + 24 * 60 * 60,
-            'stream': 0,
+            'stream': int(stream),
         }
         json_dict.update(parameters.model_dump(exclude_none=True))
         return json_dict

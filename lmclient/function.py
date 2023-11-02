@@ -34,6 +34,7 @@ class function:
         @wraps(self.callable)
         def wrapper(*args, **kwargs):
             return self.callable(*args, **kwargs)
+
         return wrapper(*args, **kwargs)
 
     def call_with_message(self, message: Message):
@@ -42,6 +43,7 @@ class function:
             arguments = json.loads(function_call['arguments'], strict=False)
             return self.callable(**arguments)
         raise ValueError(f'message is not a function call: {message}')
+
 
 def recusive_remove(object: Any, remove_key: str) -> None:
     """Remove a key from a dictionary recursively"""

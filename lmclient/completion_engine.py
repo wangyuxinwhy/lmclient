@@ -18,7 +18,7 @@ import tqdm
 from typing_extensions import Self, Unpack
 
 from lmclient.models import load_from_model_id
-from lmclient.models.base import T_O, T_P, BaseChatModel, OverrideParameters
+from lmclient.models.base import T_P, BaseChatModel, OverrideParameters
 from lmclient.types import ChatModelOutput, Prompt, Prompts
 from lmclient.utils import ensure_messages
 
@@ -33,13 +33,13 @@ class CompletionEngineKwargs(TypedDict):
     progress_bar_mode: ProgressBarMode
 
 
-class CompletionEngine(Generic[T_P, T_O]):
+class CompletionEngine(Generic[T_P]):
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
     def __init__(
         self,
-        chat_model: BaseChatModel[T_P, T_O],
+        chat_model: BaseChatModel[T_P],
         async_capacity: int = 3,
         max_requests_per_minute: int = 20,
         error_mode: ErrorMode = 'raise',
@@ -72,14 +72,13 @@ class CompletionEngine(Generic[T_P, T_O]):
         self, prompt: Prompt, progress_bar: tqdm.tqdm[NoReturn], override_parameters: OverrideParameters[T_P] = None, **kwargs
     ) -> ChatModelOutput:
         messages = ensure_messages(prompt)
+        sleep_time = self._calculate_sleep_time()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        self._task_created_time_list.append(int(time.time()))
 
         try:
             output = self.chat_model.chat_completion(prompt=messages, override_parameters=override_parameters, **kwargs)
-            if not output.is_cache:
-                sleep_time = self._calculate_sleep_time()
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-                self._task_created_time_list.append(int(time.time()))
             progress_bar.update(1)
             return output
         except BaseException as e:
@@ -90,12 +89,12 @@ class CompletionEngine(Generic[T_P, T_O]):
                     model_id=self.chat_model.model_id,
                     parameters=self.chat_model.parameters,
                     messages=messages,
-                    error_message=str(e),
+                    error=str(e),
                 )
             else:
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
-    async def native_async_run(
+    async def async_run(
         self, prompts: Prompts, override_parameters: OverrideParameters[T_P] = None, **kwargs
     ) -> AsyncGenerator[ChatModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
@@ -122,13 +121,6 @@ class CompletionEngine(Generic[T_P, T_O]):
 
         progress_bar.close()
 
-    def async_run(self, prompts: Prompts, override_parameters: T_P | None = None) -> list[ChatModelOutput]:
-        async def proxy_function():
-            results = [i async for i in self.native_async_run(prompts, override_parameters=override_parameters)]
-            return results
-
-        return anyio.run(proxy_function)
-
     async def _async_run_single_task(
         self,
         prompt: Prompt,
@@ -142,15 +134,14 @@ class CompletionEngine(Generic[T_P, T_O]):
 
         async with limiter:
             try:
+                async with task_created_lock:
+                    sleep_time = self._calculate_sleep_time()
+                    if sleep_time > 0:
+                        await anyio.sleep(sleep_time)
+                    self._task_created_time_list.append(int(time.time()))
                 output = await self.chat_model.async_chat_completion(
                     messages, override_parameters=override_parameters, **kwargs
                 )
-                if not output.is_cache:
-                    async with task_created_lock:
-                        sleep_time = self._calculate_sleep_time()
-                        if sleep_time > 0:
-                            await anyio.sleep(sleep_time)
-                        self._task_created_time_list.append(int(time.time()))
                 progress_bar.update(1)
                 return output
             except BaseException as e:
@@ -161,7 +152,7 @@ class CompletionEngine(Generic[T_P, T_O]):
                         model_id=self.chat_model.model_id,
                         parameters=self.chat_model.parameters,
                         messages=messages,
-                        error_message=str(e),
+                        error=str(e),
                     )
                 else:
                     raise ValueError(f'Unknown error mode: {self.error_mode}') from e

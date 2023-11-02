@@ -10,7 +10,7 @@ from typing_extensions import Unpack, override
 
 from lmclient.exceptions import MessageError, ResponseFailedError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import Message, Messages, ModelParameters, ModelResponse, Probability, Temperature, TextMessage
+from lmclient.types import Message, Messages, ModelParameters, ModelResponse, Probability, Stream, Temperature, TextMessage
 from lmclient.utils import is_text_message
 
 API_TOKEN_TTL_SECONDS = 3 * 60
@@ -77,12 +77,11 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         super().__init__(parameters=parameters, **kwargs)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
-        self.api_base = api_base or self.default_api_base
-        self.api_base.rstrip('/')
+        self.api_base = (api_base or self.default_api_base).rstrip('/')
 
     @override
     def get_request_parameters(self, messages: Messages, parameters: ZhiPuChatParameters) -> HttpxPostKwargs:
-        zhipu_messages: list[ZhiPuMessage] = [convert_to_zhipu_message(message) for message in messages]
+        zhipu_messages = [convert_to_zhipu_message(message) for message in messages]
         headers = {
             'Authorization': generate_token(self.api_key),
         }
@@ -95,12 +94,28 @@ class ZhiPuChat(HttpChatModel[ZhiPuChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         if response['success']:
             text = response['data']['choices'][0]['content']
             return [TextMessage(role='assistant', content=text)]
         else:
-            raise ResponseFailedError(f'Failed response: {response}')
+            raise ResponseFailedError(f'{response}')
+
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: ZhiPuChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['url'] = f'{self.api_base}/{self.model}/sse-invoke'
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        if response['data']:
+            return Stream(delta=response['data'], control='continue')
+        return Stream(delta='', control='finish')
+
+    @override
+    def _preprocess_stream_data(self, stream_data: str) -> ModelResponse:
+        return {'data': stream_data}
 
     @property
     @override

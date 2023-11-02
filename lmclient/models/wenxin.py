@@ -20,6 +20,7 @@ from lmclient.types import (
     ModelParameters,
     ModelResponse,
     Probability,
+    Stream,
     Temperature,
     TextMessage,
 )
@@ -206,7 +207,19 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def get_stream_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        if response['is_end']:
+            return Stream(delta=response['result'], control='finish')
+        return Stream(delta=response['result'], control='continue')
+
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error_msg'):
             raise ResponseFailedError(f'Response Failed: {response}')
         if response.get('function_call'):

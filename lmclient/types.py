@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SerializeAsAny, TypeAdapter
@@ -9,6 +8,8 @@ from typing_extensions import Annotated, NotRequired, Self, TypedDict
 JsonSchema = Dict[str, Any]
 Temperature = Annotated[float, Field(ge=0, le=1)]
 Probability = Annotated[float, Field(ge=0, le=1)]
+T_P = TypeVar('T_P', bound='ModelParameters')
+T_O = TypeVar('T_O', bound='ChatModelOutput')
 
 
 class TextMessage(TypedDict):
@@ -56,9 +57,6 @@ class ModelParameters(BaseModel):
             setattr(self, key, value)
 
 
-T_P = TypeVar('T_P', bound='ModelParameters')
-
-
 class ChatModelOutput(BaseModel, Generic[T_P]):
     model_config = ConfigDict(protected_namespaces=())
 
@@ -66,17 +64,28 @@ class ChatModelOutput(BaseModel, Generic[T_P]):
     parameters: SerializeAsAny[T_P]
     messages: 'Messages'
     reply: str = ''
-    hash_key: str = ''
-    is_cache: bool = False
-    error_message: Optional[str] = None
+    error: Optional[str] = None
+    extra_info: Dict[str, Any] = {}
 
     @property
     def is_error(self) -> bool:
-        return self.error_message is not None
+        return self.error is not None
+
+
+class Stream(BaseModel):
+    delta: str = ''
+    control: Literal['start', 'continue', 'finish', 'done']
+
+
+class ChatModelStreamOutput(ChatModelOutput[T_P]):
+    stream: Stream
+
+    @property
+    def is_finish(self) -> bool:
+        return self.stream.control == 'finish'
 
 
 ModelResponse = Dict[str, Any]
-PathOrStr = Union[str, Path]
 Message = Union[TextMessage, FunctionCallMessage]
 Messages = Sequence[Message]
 Prompt = Union[str, TextMessage, Messages]

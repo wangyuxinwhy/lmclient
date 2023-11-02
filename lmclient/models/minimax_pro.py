@@ -16,6 +16,7 @@ from lmclient.types import (
     ModelParameters,
     ModelResponse,
     Probability,
+    Stream,
     Temperature,
     TextMessage,
 )
@@ -200,11 +201,24 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
     @override
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             return [self._convert_to_message(i) for i in response['choices'][0]['messages']]
         except (KeyError, IndexError, TypeError) as e:
             raise ResponseFailedError(f'Invalid minimax response: {response}') from e
+
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        delta = response['choices'][0]['messages'][0]['text']
+        if response['reply']:
+            return Stream(delta=delta, control='finish')
+        return Stream(delta=delta, control='continue')
 
     @staticmethod
     def _convert_to_message(message: MinimaxProMessage) -> Message:

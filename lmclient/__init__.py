@@ -18,7 +18,7 @@ from lmclient.models import (
     ZhiPuChat,
     ZhiPuChatParameters,
 )
-from lmclient.types import GeneralParameters, Message
+from lmclient.types import GeneralParameters
 from lmclient.version import __version__
 
 __all__ = [
@@ -41,6 +41,5 @@ __all__ = [
     'BaichuanChatParameters',
     'function',
     'GeneralParameters',
-    'Message',
     '__version__',
 ]
