@@ -1,166 +1,157 @@
 from __future__ import annotations
 
 import os
-from copy import copy
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
-from typing_extensions import NotRequired, TypedDict
+from pydantic import Field, PositiveInt
+from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError
-from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
-from lmclient.parser import ParserError
+from lmclient.exceptions import MessageError, UnexpectedResponseError
+from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
-    FunctionCallDict,
-    FunctionDict,
+    FunctionCallMessage,
     GeneralParameters,
+    JsonSchema,
     Message,
     Messages,
     ModelParameters,
     ModelResponse,
-    is_function_call_message,
-    is_text_message,
+    Probability,
+    Stream,
+    Temperature,
+    TextMessage,
 )
+from lmclient.utils import is_function_call_message, is_text_message
 
 
-class FunctionCallNameDict(TypedDict):
+class FunctionCallName(TypedDict):
     name: str
 
 
-class OpenAIMessageDict(TypedDict):
+class OpenaiFunction(TypedDict):
+    name: str
+    parameters: JsonSchema
+    description: NotRequired[str]
+
+
+class OpenaiFunctionCall(TypedDict):
+    name: str
+    arguments: str
+
+
+class OpenAIMessage(TypedDict):
     role: str
     content: Optional[str]
     name: NotRequired[str]
-    function_call: NotRequired[FunctionCallDict]
+    function_call: NotRequired[OpenaiFunctionCall]
 
 
 class OpenAIChatParameters(ModelParameters):
-    temperature: float = 1
-    top_p: float = 1
-    max_tokens: Optional[int] = None
-    functions: Optional[List[FunctionDict]] = None
-    function_call: Union[Literal['auto'], FunctionCallNameDict, None] = None
+    temperature: Optional[Temperature] = None
+    top_p: Optional[Probability] = None
+    max_tokens: Optional[PositiveInt] = None
+    functions: Optional[List[OpenaiFunction]] = None
+    function_call: Union[Literal['auto'], FunctionCallName, None] = None
     stop: Union[str, List[str], None] = None
-    presence_penalty: Optional[float] = 0
-    frequency_penalty: Optional[float] = 0
-    logit_bias: Optional[Dict[int, int]] = None
+    presence_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
+    frequency_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
+    logit_bias: Optional[Dict[int, Annotated[int, Field(ge=-100, le=100)]]] = None
     user: Optional[str] = None
 
+    @override
     @classmethod
-    def from_general_parameters(cls, general_parameters: GeneralParameters):
-        if general_parameters.function_call != 'auto' and general_parameters.function_call is not None:
-            function_call = FunctionCallNameDict(name=general_parameters.function_call)
-        else:
-            function_call = general_parameters.function_call
-
-        return cls(
-            temperature=general_parameters.temperature,
-            top_p=general_parameters.top_p,
-            max_tokens=general_parameters.max_tokens,
-            functions=general_parameters.functions,
-            function_call=function_call,
-        )
+    def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
+        parameters = general_parameters.model_copy(deep=True)
+        if parameters.functions:
+            for function in parameters.functions:
+                function.pop('examples', None)
+                function.pop('responses', None)
+        return super().from_general_parameters(parameters)
 
 
-class OpenAIExtractParameters(ModelParameters):
-    temperature: float = 1
-    top_p: float = 1
-    stop: Union[str, List[str], None] = None
-    presence_penalty: Optional[float] = 0
-    frequency_penalty: Optional[float] = 0
-    logit_bias: Optional[Dict[int, int]] = None
-    user: Optional[str] = None
-
-    @classmethod
-    def from_general_parameters(cls, general_parameters: GeneralParameters):
-        return cls(
-            temperature=general_parameters.temperature,
-            top_p=general_parameters.top_p,
-        )
-
-
-def format_message_to_openai(message: Message) -> OpenAIMessageDict:
-    role = message.role
-    if role == 'error':
-        raise MessageError(f'Invalid message role: {role}, only "user", "assistant", "system" and "function" are allowed')
-
+def convert_to_openai_message(message: Message) -> OpenAIMessage:
     if is_function_call_message(message):
-        function_call = copy(message.content)
-        if 'thoughts' in function_call:
-            function_call.pop('thoughts')
         return {
             'role': 'assistant',
-            'function_call': function_call,
+            'function_call': {
+                'name': message['content']['name'],
+                'arguments': message['content']['arguments'],
+            },
             'content': None,
         }
     elif is_text_message(message):
+        role = message['role']
         if role == 'function':
-            name = message.name
-            if name is None:
-                raise MessageError(f'Function name is required, message: {message}')
+            name = message.get('name')
+            if (name := message.get('name')) is None:
+                raise MessageError(f'function name is required, message: {message}')
             return {
                 'role': role,
                 'name': name,
-                'content': message.content,
+                'content': message['content'],
             }
         else:
             return {
                 'role': role,
-                'content': message.content,
+                'content': message['content'],
             }
     else:
-        raise MessageError(f'Invalid message type: {message}')
+        raise MessageError(f'invalid message type: {type(message)}')
 
 
 def parse_openai_model_reponse(response: ModelResponse) -> Messages:
-    funcation_call = response['choices'][0]['message'].get('function_call')
+    function_call: OpenaiFunctionCall = response['choices'][0]['message'].get('function_call')
     try:
-        if bool(funcation_call):
+        if function_call:
             return [
-                Message(
+                FunctionCallMessage(
                     role='assistant',
-                    content=funcation_call,
+                    content={
+                        'name': function_call['name'],
+                        'arguments': function_call['arguments'],
+                    },
                 )
             ]
         else:
             text: str = response['choices'][0]['message']['content']
             return [
-                Message(
+                TextMessage(
                     role='assistant',
                     content=text,
                 )
             ]
     except (KeyError, IndexError) as e:
-        raise ParserError('Parse response failed') from e
+        raise UnexpectedResponseError(response) from e
 
 
 class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
-    model_type = 'openai'
+    model_type: ClassVar[str] = 'openai'
+    support_stream: ClassVar[bool] = True
+    default_api_base: ClassVar[str] = 'https://api.openai.com/v1'
 
     def __init__(
         self,
         model: str = 'gpt-3.5-turbo',
-        system_prompt: str | None = None,
         api_key: str | None = None,
         api_base: str | None = None,
-        timeout: int | None = 60,
-        retry: bool | RetryStrategy = False,
-        parameters: OpenAIChatParameters = OpenAIChatParameters(),
-        use_cache: Path | str | bool = False,
-        proxies: ProxiesTypes | None = None,
+        system_prompt: str | None = None,
+        parameters: OpenAIChatParameters | None = None,
+        **kwargs: Unpack[HttpChatModelKwargs],
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
+        parameters = parameters or OpenAIChatParameters()
+        super().__init__(parameters=parameters, **kwargs)
         self.model = model
         self.system_prompt = system_prompt
-        self.api_base = api_base or os.getenv('OPENAI_API_BASE') or 'https://api.openai.com/v1'
+        self.api_base = api_base or os.getenv('OPENAI_API_BASE') or self.default_api_base
         self.api_key = api_key or os.environ['OPENAI_API_KEY']
 
-    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> dict[str, Any]:
+    @override
+    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        openai_messages = [convert_to_openai_message(message) for message in messages]
         headers = {
             'Authorization': f'Bearer {self.api_key}',
         }
         parameters_dict = parameters.model_dump(exclude_defaults=True)
-        openai_messages = [format_message_to_openai(message) for message in messages]
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {
@@ -174,13 +165,35 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
             'json': params,
         }
 
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
 
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        if response.get('data') == '[DONE]':
+            return Stream(delta='', control='done')
+        else:
+            delta = response['choices'][0]['delta']
+            if 'role' in delta:
+                return Stream(delta='', control='start')
+            elif 'content' in delta:
+                return Stream(delta=delta['content'], control='continue')
+            else:
+                return Stream(delta='', control='finish')
+
     @property
+    @override
     def name(self) -> str:
         return self.model
 
     @classmethod
+    @override
     def from_name(cls, name: str, **kwargs: Any):
         return cls(model=name, **kwargs)

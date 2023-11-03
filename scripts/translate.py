@@ -25,10 +25,9 @@ async def main(
     model_id: str = 'openai',
     max_requests_per_minute: int = 10,
     async_capacity: int = 3,
-    error_mode: ErrorMode = ErrorMode.RAISE,
-    use_cache: bool = True,
+    error_mode: ErrorMode = 'raise',
 ) -> None:
-    model = load_from_model_id(model_id=model_id, use_cache=use_cache)
+    model = load_from_model_id(model_id=model_id)
     client = CompletionEngine(
         model,  # type: ignore
         max_requests_per_minute=max_requests_per_minute,
@@ -44,7 +43,7 @@ async def main(
 
     index = 0
     async with await open_file(output_file, 'w') as f:
-        async for result in client.native_async_run(prompts):
+        async for result in client.async_run(prompts):
             text = texts[index]
             await f.write(json.dumps({'text': text, 'translation': result.reply}, ensure_ascii=False) + '\n')
             await f.flush()

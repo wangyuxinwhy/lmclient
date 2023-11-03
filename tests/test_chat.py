@@ -25,6 +25,6 @@ def google(keyword: str) -> str:
 
 def test_function():
     model = OpenAIChat()
-    engine = ChatEngine(model, temperature=0, functions=[get_weather, google])
+    engine = ChatEngine(model, temperature=0, functions=[get_weather, google], stream=False)
     reply = engine.chat('今天北京天气怎么样？')
     assert '27' in reply

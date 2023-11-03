@@ -1,96 +1,96 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import NotRequired, Self, TypedDict, TypeGuard
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SerializeAsAny, TypeAdapter
+from typing_extensions import Annotated, NotRequired, Self, TypedDict
 
-from lmclient.exceptions import MessageError
+JsonSchema = Dict[str, Any]
+Temperature = Annotated[float, Field(ge=0, le=1)]
+Probability = Annotated[float, Field(ge=0, le=1)]
+T_P = TypeVar('T_P', bound='ModelParameters')
+T_O = TypeVar('T_O', bound='ChatModelOutput')
 
-Messages = List['Message']
-ModelResponse = Dict[str, Any]
-Prompt = Union[str, 'Message', 'MessageDict', Sequence[Union['MessageDict', 'Message']]]
-Role = Literal['user', 'assistant', 'function', 'error', 'system']
+
+class TextMessage(TypedDict):
+    role: Literal['user', 'assistant', 'function', 'system']
+    name: NotRequired[str]
+    content: str
 
 
-class FunctionDict(TypedDict):
+class FunctionCallMessage(TypedDict):
+    role: Literal['assistant']
+    name: NotRequired[str]
+    content: FunctionCall
+
+
+class Function(TypedDict):
     name: str
+    parameters: JsonSchema
     description: NotRequired[str]
-    parameters: Dict[str, Any]
-    responses: NotRequired[Dict[str, str]]
-    examples: NotRequired[List[MessageDict]]
+    responses: NotRequired[JsonSchema]
+    examples: NotRequired['Messages']
 
 
-class FunctionCallDict(TypedDict):
+class FunctionCall(TypedDict):
     name: str
     arguments: str
     thoughts: NotRequired[str]
 
 
-class FunctionCallMessage(BaseModel):
-    role: Literal['assitant']
-    name: Optional[str] = None
-    content: FunctionCallDict
-
-
-class TextMessage(BaseModel):
-    role: Role
-    name: Optional[str] = None
-    content: str
-
-
-class Message(BaseModel):
-    role: Role
-    name: Optional[str] = None
-    content: Union[str, FunctionCallDict]
-
-
-def is_function_call_message(message: Message) -> TypeGuard[FunctionCallMessage]:
-    if isinstance(message.content, dict):
-        if message.role != 'assistant':
-            raise MessageError(f'Invalid role "{message.role}" for function call, can only be made by "assistant"')
-        return True
-    return False
-
-
-def is_text_message(message: Message) -> TypeGuard[TextMessage]:
-    return isinstance(message.content, str)
-
-
-class MessageDict(TypedDict):
-    role: Role
-    content: Union[str, FunctionCallDict]
-    name: NotRequired[str]
-
-
 class GeneralParameters(BaseModel):
-    temperature: float = 1
-    top_p: float = 1
-    max_tokens: Optional[int] = None
-    functions: Optional[List[FunctionDict]] = None
-    function_call: Optional[str] = None
-
-
-class ChatModelOutput(BaseModel):
-    messages: Messages
-    reply: str = ''
-    hash_key: str = ''
-    is_cache: bool = False
+    temperature: Optional[Temperature] = None
+    top_p: Optional[Probability] = None
+    max_tokens: Optional[PositiveInt] = None
+    functions: Optional[List[Function]] = None
 
 
 class ModelParameters(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     @classmethod
     def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
-        raise NotImplementedError
+        #!todo add check logic
+        return cls(**general_parameters.model_dump(exclude_none=True))
+
+    def update_with_general_parameters(self, general_parameters: GeneralParameters) -> None:
+        parameters = self.__class__.from_general_parameters(general_parameters)
+        parameters = parameters.model_dump(exclude_unset=True, exclude_none=True)
+        for key, value in parameters.items():
+            setattr(self, key, value)
 
 
-class RetryStrategy(BaseModel):
-    min_wait_seconds: int = 2
-    max_wait_seconds: int = 20
-    max_attempt: int = 3
+class ChatModelOutput(BaseModel, Generic[T_P]):
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: str
+    parameters: SerializeAsAny[T_P]
+    messages: 'Messages'
+    reply: str = ''
+    error: Optional[str] = None
+    extra_info: Dict[str, Any] = {}
+
+    @property
+    def is_error(self) -> bool:
+        return self.error is not None
 
 
-class HttpChatModelOutput(ChatModelOutput):
-    response: ModelResponse = Field(default_factory=dict)
+class Stream(BaseModel):
+    delta: str = ''
+    control: Literal['start', 'continue', 'finish', 'done']
+
+
+class ChatModelStreamOutput(ChatModelOutput[T_P]):
+    stream: Stream
+
+    @property
+    def is_finish(self) -> bool:
+        return self.stream.control == 'finish'
+
+
+ModelResponse = Dict[str, Any]
+Message = Union[TextMessage, FunctionCallMessage]
+Messages = Sequence[Message]
+Prompt = Union[str, TextMessage, Messages]
+Prompts = Sequence[Prompt]
+text_message_validator = TypeAdapter(TextMessage)
+prompt_validator = TypeAdapter(Prompt)
+PrimitiveData = Optional[Union[str, int, float, bool]]

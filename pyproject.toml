@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "lmclient-core"
-version = "0.8.4"
+version = "0.9.0"
 description = "LM Async Client, openai client, azure openai client ..."
 authors = ["wangyuxin <wangyuxin@mokahr.com>"]
 readme = "README.md"
@@ -13,16 +13,16 @@ keywords = ["lmclient", "openai", "azure", "async"]
 python = "^3.8"
 asyncer = "0.0.2"
 typing-extensions = "^4.6.2"
-diskcache = "^5.6.1"
 httpx = "^0.24.1"
 tenacity = "^8.2.2"
 websocket-client = "^1.6.1"
 pyjwt = "^2.8.0"
 cachetools = "^5.3.1"
 tqdm = "^4.66.1"
-pydantic = ">1.0"
+pydantic = "^2.0"
 docstring-parser = "^0.15"
 anyio = "<4.0.0"
+httpx-sse = "0.3.1"
 
 [tool.ruff]
 line-length = 128

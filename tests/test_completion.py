@@ -1,32 +1,60 @@
 from __future__ import annotations
 
+import asyncio
 import time
-from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator, Iterator
 
 from lmclient.completion_engine import CompletionEngine
 from lmclient.models.base import BaseChatModel
-from lmclient.types import ChatModelOutput, Message, MessageDict, Messages, ModelParameters
+from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelParameters, Prompts, Stream, TextMessage
 
 
 class TestModelParameters(ModelParameters):
     prefix: str = 'Completed:'
 
 
-class TestModel(BaseChatModel[TestModelParameters, ChatModelOutput]):
+class TestModel(BaseChatModel[TestModelParameters]):
     model_type = 'test'
 
-    def __init__(self, default_parameters: TestModelParameters | None = None, use_cache: Path | str | bool = False) -> None:
+    def __init__(self, default_parameters: TestModelParameters | None = None) -> None:
         default_parameters = default_parameters or TestModelParameters()
-        super().__init__(default_parameters, use_cache)
+        super().__init__(default_parameters)
 
     def _chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(messages=[Message(role='assistant', content=content)], reply=content)
+        content = f'Completed: {messages[-1]["content"]}'
+        return ChatModelOutput(
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+        )
 
     async def _async_chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(messages=[Message(role='assistant', content=content)], reply=content)
+        content = f'Completed: {messages[-1]["content"]}'
+        return ChatModelOutput(
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+        )
+
+    def _stream_chat_completion(
+        self, messages: Messages, parameters: TestModelParameters
+    ) -> Iterator[ChatModelStreamOutput[TestModelParameters]]:
+        content = f'Completed: {messages[-1]["content"]}'
+        yield ChatModelStreamOutput(
+            model_id='test',
+            parameters=parameters,
+            messages=[TextMessage(role='assistant', content=content)],
+            reply=content,
+            stream=Stream(delta=content, control='finish'),
+        )
+
+    async def _async_stream_chat_completion(
+        self, messages: Messages, parameters: TestModelParameters
+    ) -> AsyncIterator[ChatModelStreamOutput[TestModelParameters]]:
+        content = f'Completed: {messages[-1]["content"]}'
+        yield ChatModelStreamOutput(
+            model_id='test',
+            parameters=parameters,
+            messages=[TextMessage(role='assistant', content=content)],
+            reply=content,
+            stream=Stream(delta=content, control='finish'),
+        )
 
     @property
     def name(self) -> str:
@@ -42,7 +70,7 @@ def test_sync_completion():
     client = CompletionEngine(completion_model)
     prompts = [
         'Hello, my name is',
-        Message(role='user', content='hello, who are you?'),
+        TextMessage(role='user', content='hello, who are you?'),
     ]
     results = list(client.run(prompts))
 
@@ -52,36 +80,21 @@ def test_sync_completion():
     assert len(results) == len(prompts)
 
 
+async def async_helper(client: CompletionEngine, prompts: Prompts):
+    return [result async for result in client.async_run(prompts)]
+
+
 def test_async_completion():
     completion_model = TestModel()
     client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
     CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
-    messages: list[MessageDict] = [
-        {'role': 'user', 'content': 'hello, who are you?'},
-    ]
+    messages: list[TextMessage] = [{'role': 'user', 'content': 'hello, who are you?'}]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4
-    results = client.async_run(prompts)
+    results = asyncio.run(async_helper(client, prompts))
     elapsed_time = time.perf_counter() - start_time
 
     assert results[0].reply == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
     assert elapsed_time > 4
-
-
-def test_async_completion_with_cache(tmp_path: Path):
-    completion_model = TestModel(use_cache=tmp_path)
-    client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
-    CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
-
-    start_time = time.perf_counter()
-    prompts = ['Hello, my name is', 'I am a student', 'I like to play basketball'] * 4
-    results = client.async_run(prompts)
-    elapsed_time = time.perf_counter() - start_time
-
-    assert isinstance(results[0].reply, str)
-    assert results[3].reply == 'Completed: Hello, my name is'
-    assert len(results) == len(prompts)
-    assert elapsed_time < 2
-    assert len(list(completion_model.chat_cache._diskcache)) == 3  # type: ignore

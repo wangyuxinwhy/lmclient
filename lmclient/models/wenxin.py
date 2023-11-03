@@ -3,94 +3,100 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from email.errors import MessageError
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, ClassVar, List, Literal, Optional
 
 import httpx
-from typing_extensions import NotRequired, Self, TypedDict
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import ResponseError
-from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
+from lmclient.exceptions import UnexpectedResponseError
+from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
+    FunctionCallMessage,
     GeneralParameters,
+    JsonSchema,
     Message,
     Messages,
     ModelParameters,
     ModelResponse,
-    is_function_call_message,
-    is_text_message,
+    Probability,
+    Stream,
+    Temperature,
+    TextMessage,
 )
+from lmclient.utils import is_function_call_message, is_text_message
 
 
-class WenxinMessageDict(TypedDict):
+class WenxinMessage(TypedDict):
     role: Literal['user', 'assistant', 'function']
     content: str
     name: NotRequired[str]
-    function_call: NotRequired[WenxinFunctionCallDict]
+    function_call: NotRequired[WenxinFunctionCall]
 
 
-class WenxinFunctionCallDict(TypedDict):
+class WenxinFunctionCall(TypedDict):
     name: str
     arguments: str
     thoughts: NotRequired[str]
 
 
-class WenxinFunctionDict(TypedDict):
+class WenxinFunction(TypedDict):
     name: str
     description: str
-    parameters: Dict[str, Any]
-    responses: NotRequired[Dict[str, str]]
-    examples: NotRequired[List[WenxinMessageDict]]
+    parameters: JsonSchema
+    responses: NotRequired[JsonSchema]
+    examples: NotRequired[List[WenxinMessage]]
 
 
-def format_message_to_wenxin(message: Message) -> WenxinMessageDict:
-    role = message.role
-    if role == 'error' or role == 'system':
+def convert_to_wenxin_message(message: Message) -> WenxinMessage:
+    role = message['role']
+
+    if role == 'system':
         raise MessageError(f'Invalid message role: {role}, only "user", "assistant" and "function" are allowed')
 
     if is_function_call_message(message):
         return {
             'role': 'assistant',
             'function_call': {
-                'name': message.content['name'],
-                'arguments': message.content['arguments'],
-                'thoughts': message.content.get('thoughts', ''),
+                'name': message['content']['name'],
+                'arguments': message['content']['arguments'],
+                'thoughts': message['content'].get('thoughts', ''),
             },
             'content': '',
         }
     elif is_text_message(message):
         if role == 'function':
-            name = message.name
-            if name is None:
+            if (name := message.get('name')) is None:
                 raise MessageError(f'Function name is required, message: {message}')
             return {
                 'role': role,
                 'name': name,
-                'content': message.content,
+                'content': message['content'],
             }
         else:
             return {
                 'role': role,
-                'content': message.content,
+                'content': message['content'],
             }
     else:
-        raise MessageError(f'Invalid message type: {message}')
+        raise MessageError(f'Invalid message type: {type(message)}')
 
 
 class WenxinChatParameters(ModelParameters):
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    functions: Optional[List[WenxinFunctionDict]] = None
-    penalty_score: Optional[float] = None
+    temperature: Optional[Temperature] = None
+    top_p: Optional[Probability] = None
+    functions: Optional[List[WenxinFunction]] = None
+    penalty_score: Optional[Annotated[float, Field(ge=1, le=2)]] = None
     system: Optional[str] = None
     user_id: Optional[str] = None
 
     @classmethod
     def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
-        if general_parameters.functions is not None:
-            wenxin_functions: list[WenxinFunctionDict] | None = []
-            for general_function in general_parameters.functions:
-                wenxin_function = WenxinFunctionDict(
+        parameters = general_parameters.model_copy(deep=True)
+        if parameters.functions is not None:
+            wenxin_functions: list[WenxinFunction] | None = []
+            for general_function in parameters.functions:
+                wenxin_function = WenxinFunction(
                     name=general_function['name'],
                     description=general_function.get('description', ''),
                     parameters=general_function['parameters'],
@@ -98,8 +104,7 @@ class WenxinChatParameters(ModelParameters):
                 if 'responses' in general_function:
                     wenxin_function['responses'] = general_function['responses']
                 if 'examples' in general_function:
-                    messages = [Message(**message_dict) for message_dict in general_function['examples']]
-                    wenxin_messages = [format_message_to_wenxin(message) for message in messages]
+                    wenxin_messages = [convert_to_wenxin_message(message) for message in general_function['examples']]
                     wenxin_function['examples'] = wenxin_messages
                 wenxin_functions.append(wenxin_function)
         else:
@@ -110,10 +115,23 @@ class WenxinChatParameters(ModelParameters):
             functions=wenxin_functions,
         )
 
+    @model_validator(mode='after')
+    def system_function_coflict(self):
+        if self.system is not None and self.functions is not None:
+            raise ValueError('system and functions cannot be used together')
+        return self
+
+    @field_validator('temperature', mode='after')
+    @classmethod
+    def temperature_gt_0(cls, value):
+        if value == 0:
+            return 0.01
+        return value
+
 
 class WenxinChat(HttpChatModel[WenxinChatParameters]):
-    model_type = 'wenxin'
-    model_name_entrypoint_map: dict[str, str] = {
+    model_type: ClassVar[str] = 'wenxin'
+    model_name_entrypoint_map: ClassVar[dict[str, str]] = {
         'llama_2_7b': 'llama_2_7b',
         'llama_2_13b': 'llama_2_13b',
         'llama_2_70b': 'llama_2_70b',
@@ -121,9 +139,9 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         'ERNIE-Bot-turbo': 'eb-instant',
         'ERNIE-Bot-4': 'completions_pro',
     }
-    access_token_refresh_days: int = 20
-    access_token_url = 'https://aip.baidubce.com/oauth/2.0/token'
-    default_api_base = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/'
+    access_token_refresh_days: ClassVar[int] = 20
+    access_token_url: ClassVar[str] = 'https://aip.baidubce.com/oauth/2.0/token'
+    default_api_base: ClassVar[str] = 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/'
 
     def __init__(
         self,
@@ -131,13 +149,11 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         api_key: str | None = None,
         api_base: str | None = None,
         secret_key: str | None = None,
-        parameters: WenxinChatParameters = WenxinChatParameters(),
-        timeout: int | None = None,
-        retry: bool | RetryStrategy = False,
-        use_cache: Path | str | bool = False,
-        proxies: ProxiesTypes | None = None,
+        parameters: WenxinChatParameters | None = None,
+        **kwargs: Unpack[HttpChatModelKwargs],
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
+        parameters = parameters or WenxinChatParameters()
+        super().__init__(parameters=parameters, **kwargs)
         self.model = self.normalize_model(model)
         self.api_base = api_base or self.default_api_base
         self._api_key = api_key or os.environ['WENXIN_API_KEY']
@@ -146,6 +162,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         self._access_token_expires_at = datetime.now() + timedelta(days=self.access_token_refresh_days)
 
     @property
+    @override
     def name(self) -> str:
         return self.model
 
@@ -169,17 +186,18 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         response.raise_for_status()
         response_dict = response.json()
         if 'error' in response_dict:
-            raise ResponseError(response_dict['error_description'])
+            raise UnexpectedResponseError(response_dict)
         return response_dict['access_token']
 
-    def get_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> dict[str, Any]:
+    @override
+    def get_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
         self.maybe_refresh_access_token()
 
-        message_dicts: list[WenxinMessageDict] = [format_message_to_wenxin(message) for message in messages]
+        wenxin_messages: list[WenxinMessage] = [convert_to_wenxin_message(message) for message in messages]
         parameters_dict = parameters.model_dump(exclude_none=True)
         if 'temperature' in parameters_dict:
             parameters_dict['temperature'] = max(0.01, parameters_dict['temperature'])
-        json_data = {'messages': message_dicts, **parameters_dict}
+        json_data = {'messages': wenxin_messages, **parameters_dict}
 
         return {
             'url': self.api_url,
@@ -188,15 +206,35 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
             'headers': {'Content-Type': 'application/json'},
         }
 
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['json']['stream'] = True
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        if response['is_end']:
+            return Stream(delta=response['result'], control='finish')
+        return Stream(delta=response['result'], control='continue')
+
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error_msg'):
-            raise ResponseError(response['error_msg'])
+            raise UnexpectedResponseError(response)
         if response.get('function_call'):
-            arguments = response['function_call']['arguments']
-            name = response['function_call']['name']
-            return [Message(role='assistant', content={'name': name, 'arguments': arguments})]
+            return [
+                FunctionCallMessage(
+                    role='assistant',
+                    content={
+                        'name': response['function_call']['name'],
+                        'arguments': response['function_call']['arguments'],
+                        'thoughts': response['function_call']['thoughts'],
+                    },
+                )
+            ]
         else:
-            return [Message(role='assistant', content=response['result'])]
+            return [TextMessage(role='assistant', content=response['result'])]
 
     def maybe_refresh_access_token(self):
         if self._access_token_expires_at < datetime.now():
@@ -204,5 +242,6 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
             self._access_token_expires_at = datetime.now() + timedelta(days=self.access_token_refresh_days)
 
     @classmethod
+    @override
     def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

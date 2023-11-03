@@ -1,10 +1,14 @@
+import json
+
+
 class MessageError(Exception):
-    """
-    Base class for all message errors.
-    """
-
     pass
 
 
-class ResponseError(Exception):
-    pass
+class UnexpectedResponseError(Exception):
+    def __init__(self, response: dict, *args) -> None:
+        try:
+            message = json.dumps(response, indent=4, ensure_ascii=False)
+        except TypeError:
+            message = str(response)
+        super().__init__(message, *args)

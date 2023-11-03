@@ -4,37 +4,43 @@ import hashlib
 import json
 import os
 import time
-from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional, TypedDict
 
-from lmclient.exceptions import MessageError
-from lmclient.models.http import HttpChatModel, ProxiesTypes, RetryStrategy
-from lmclient.parser import ParserError
-from lmclient.types import GeneralParameters, Message, Messages, ModelParameters, ModelResponse
+from pydantic import Field
+from typing_extensions import Annotated, Unpack, override
+
+from lmclient.exceptions import MessageError, UnexpectedResponseError
+from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
+from lmclient.types import (
+    Message,
+    Messages,
+    ModelParameters,
+    ModelResponse,
+    Probability,
+    Stream,
+    Temperature,
+    TextMessage,
+)
+from lmclient.utils import is_text_message
 
 
-class BaichuanChatParameters(ModelParameters):
-    temperature: Optional[float] = None
-    top_k: Optional[int] = None
-    top_p: Optional[float] = None
-    with_search_enhance: Optional[bool] = None
-
-    @classmethod
-    def from_general_parameters(cls, general_parameters: GeneralParameters):
-        return cls(
-            temperature=general_parameters.temperature,
-            top_p=general_parameters.top_p,
-        )
-
-
-class BaichuanMessageDict(TypedDict):
+class BaichuanMessage(TypedDict):
     role: Literal['user', 'assistant']
     content: str
 
 
+class BaichuanChatParameters(ModelParameters):
+    temperature: Optional[Temperature] = None
+    top_k: Optional[Annotated[int, Field(ge=0)]] = None
+    top_p: Optional[Probability] = None
+    with_search_enhance: Optional[bool] = None
+
+
 class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
-    model_type = 'zhipu'
+    model_type: ClassVar[str] = 'zhipu'
+    stream_model = 'basic'
     default_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/chat'
+    default_stream_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/stream/chat'
 
     def __init__(
         self,
@@ -42,34 +48,24 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         api_key: str | None = None,
         secret_key: str | None = None,
         api_base: str | None = None,
-        timeout: int | None = 60,
-        retry: bool | RetryStrategy = False,
-        parameters: BaichuanChatParameters = BaichuanChatParameters(),
-        use_cache: Path | str | bool = False,
-        proxies: ProxiesTypes | None = None,
+        stream_api_base: str | None = None,
+        parameters: BaichuanChatParameters | None = None,
+        **kwargs: Unpack[HttpChatModelKwargs],
     ):
-        super().__init__(parameters=parameters, timeout=timeout, retry=retry, use_cache=use_cache, proxies=proxies)
+        parameters = parameters or BaichuanChatParameters()
+        super().__init__(parameters=parameters, **kwargs)
         self.model = model
         self.api_key = api_key or os.environ['BAICHUAN_API_KEY']
         self.secret_key = secret_key or os.environ['BAICHUAN_SECRET_KEY']
         self.api_base = api_base or self.default_api_base
         self.api_base.rstrip('/')
+        self.stream_api_base = stream_api_base or self.default_stream_api_base
+        self.stream_api_base.rstrip('/')
+        self._stream_start = False
 
-    def get_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> dict[str, Any]:
-        baichuan_messages: list[BaichuanMessageDict] = []
-        for message in messages:
-            role = message.role
-            if role not in ('user', 'assistant'):
-                raise ValueError(f'Role of message must be user or assistant, but got {message.role}')
-            if not isinstance(message.content, str):
-                raise MessageError(f'Message content must be str, but got {type(message.content)}')
-            baichuan_messages.append(
-                {
-                    'role': role,
-                    'content': message.content,
-                }
-            )
-
+    @override
+    def get_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> HttpxPostKwargs:
+        baichuan_messages: list[BaichuanMessage] = [self.convert_to_baichuan_message(message) for message in messages]
         data = {
             'model': self.model,
             'messages': baichuan_messages,
@@ -94,6 +90,32 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
             'json': data,
         }
 
+    @override
+    def get_stream_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> HttpxPostKwargs:
+        http_parameters = self.get_request_parameters(messages, parameters)
+        http_parameters['url'] = self.stream_api_base
+        return http_parameters
+
+    @override
+    def parse_stream_response(self, response: ModelResponse) -> Stream:
+        message = response['data']['messages'][0]
+        if message['finish_reason']:
+            return Stream(delta=message['content'], control='finish')
+        return Stream(delta=message['content'], control='continue')
+
+    @staticmethod
+    def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
+        if not is_text_message(message):
+            raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
+        role = message['role']
+        if role != 'assistant' and role != 'user':
+            raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
+
+        return {
+            'role': role,
+            'content': message['content'],
+        }
+
     @staticmethod
     def calculate_md5(input_string: str):
         md5 = hashlib.md5()
@@ -101,12 +123,13 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         encrypted = md5.hexdigest()
         return encrypted
 
-    def parse_model_reponse(self, response: ModelResponse) -> Messages:
+    @override
+    def parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             text = response['data']['messages'][-1]['content']
-            return [Message(role='assistant', content=text)]
+            return [TextMessage(role='assistant', content=text)]
         except (KeyError, IndexError) as e:
-            raise ParserError(f'Parse response failed, reponse: {response}') from e
+            raise UnexpectedResponseError(response) from e
 
     @property
     def name(self) -> str:
