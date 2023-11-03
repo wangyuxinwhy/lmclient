@@ -53,7 +53,8 @@ class ModelParameters(BaseModel):
 
     def update_with_general_parameters(self, general_parameters: GeneralParameters) -> None:
         parameters = self.__class__.from_general_parameters(general_parameters)
-        for key, value in parameters:
+        parameters = parameters.model_dump(exclude_unset=True, exclude_none=True)
+        for key, value in parameters.items():
             setattr(self, key, value)
 
 

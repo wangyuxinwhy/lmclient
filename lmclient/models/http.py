@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 from typing_extensions import Required, TypedDict, override
 
-from lmclient.exceptions import ResponseFailedError
+from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.base import T_P, BaseChatModel
 from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelResponse, PrimitiveData, Stream, TextMessage
 
@@ -155,7 +155,7 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
                 stream = self.parse_stream_response(stream_response)
             except BaseException as e:
                 logger.error(f'Parse stream response failed: {stream_response}')
-                raise ResponseFailedError(f'{stream_response}') from e
+                raise UnexpectedResponseError(stream_response) from e
 
             if not start:
                 stream.control = 'start'

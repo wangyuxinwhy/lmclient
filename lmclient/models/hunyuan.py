@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Literal, Optional
 
 from typing_extensions import Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import ResponseFailedError
+from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs, ModelResponse, Stream
 from lmclient.types import Message, Messages, ModelParameters, Probability, Temperature, TextMessage
 from lmclient.utils import is_text_message
@@ -104,7 +104,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
     @override
     def parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error'):
-            raise ResponseFailedError(f'code: {response["error"]["code"]}, message: {response["error"]["message"]}')
+            raise UnexpectedResponseError(response)
         return [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
 
     def generate_json_dict(self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters, stream: bool = False):

@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal, Optional
 from pydantic import Field, PositiveInt, field_validator
 from typing_extensions import Annotated, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, ResponseFailedError
+from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
     Message,
@@ -51,10 +51,10 @@ class MinimaxChatParameters(ModelParameters):
 
 def convert_to_minimax_message(message: Message) -> MinimaxMessage:
     if not is_text_message(message):
-        raise MessageError(f'Invalid message type: {type(message)}, only TextMessage is allowed')
+        raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
     role = message['role']
     if role != 'assistant' and role != 'user':
-        raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
+        raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
     if role == 'assistant':
         return {
@@ -82,7 +82,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         parameters: MinimaxChatParameters | None = None,
         **kwagrs: Unpack[HttpChatModelKwargs],
     ):
-        parameters = MinimaxChatParameters()
+        parameters = parameters or MinimaxChatParameters()
         if system_prompt is not None:
             parameters.prompt = system_prompt
         super().__init__(parameters=parameters, **kwagrs)
@@ -119,7 +119,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         try:
             return [TextMessage(role='assistant', content=response['choices'][0]['text'])]
         except (KeyError, IndexError, TypeError) as e:
-            raise ResponseFailedError(f'Response Failed: {response}') from e
+            raise UnexpectedResponseError(response) from e
 
     @override
     def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:

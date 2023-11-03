@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Literal, Optional, TypedDict
 from pydantic import Field
 from typing_extensions import Annotated, Unpack, override
 
-from lmclient.exceptions import MessageError, ResponseFailedError
+from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
     Message,
@@ -106,10 +106,10 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
     @staticmethod
     def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
         if not is_text_message(message):
-            raise MessageError(f'Invalid message type: {type(message)}, only TextMessage is allowed')
+            raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
         role = message['role']
         if role != 'assistant' and role != 'user':
-            raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
+            raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
         return {
             'role': role,
@@ -129,7 +129,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
             text = response['data']['messages'][-1]['content']
             return [TextMessage(role='assistant', content=text)]
         except (KeyError, IndexError) as e:
-            raise ResponseFailedError(f'Response Failed, {response}') from e
+            raise UnexpectedResponseError(response) from e
 
     @property
     def name(self) -> str:

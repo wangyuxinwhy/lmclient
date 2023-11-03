@@ -84,15 +84,7 @@ class ChatEngine(Generic[T_P]):
     def print_message(self):
         return self.printer is not None
 
-    @overload
-    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[False] = False, **kwargs: Any) -> None:
-        ...
-
-    @overload
-    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[True] = True, **kwargs: Any) -> str:
-        ...
-
-    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: bool = False, **kwargs: Any) -> str | None:
+    def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any) -> str:
         self._function_call_count = 0
 
         user_input_message = TextMessage(role='user', content=user_input)
@@ -113,14 +105,11 @@ class ChatEngine(Generic[T_P]):
 
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
-            reply = last_message['content']
-            if return_reply:
-                return reply
+            return last_message['content']
         elif is_function_call_message(last_message):
             function_call = last_message['content']
-            reply =  self._recursive_function_call(function_call, override_parameters, **kwargs)
-            if return_reply:
-                return reply
+            reply = self._recursive_function_call(function_call, override_parameters, **kwargs)
+            return reply
         else:
             raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
@@ -136,14 +125,28 @@ class ChatEngine(Generic[T_P]):
                 return stream_output
 
     @overload
-    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[False] = False, **kwargs: Any) -> None:
+    async def async_chat(
+        self,
+        user_input: str,
+        override_parameters: OverrideParameters[T_P] = None,
+        return_reply: Literal[False] = False,
+        **kwargs: Any,
+    ) -> None:
         ...
 
     @overload
-    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: Literal[True] = True, **kwargs: Any) -> str:
+    async def async_chat(
+        self,
+        user_input: str,
+        override_parameters: OverrideParameters[T_P] = None,
+        return_reply: Literal[True] = True,
+        **kwargs: Any,
+    ) -> str:
         ...
 
-    async def async_chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: bool = False, **kwargs: Any) -> str | None:
+    async def async_chat(
+        self, user_input: str, override_parameters: OverrideParameters[T_P] = None, return_reply: bool = False, **kwargs: Any
+    ) -> str | None:
         self._function_call_count = 0
 
         user_input_message = TextMessage(role='user', content=user_input)

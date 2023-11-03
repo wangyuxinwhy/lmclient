@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, AsyncIterator, Iterator
 
 from lmclient.completion_engine import CompletionEngine
 from lmclient.models.base import BaseChatModel
-from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelParameters, Stream, TextMessage
+from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelParameters, Prompts, Stream, TextMessage
 
 
 class TestModelParameters(ModelParameters):
@@ -78,17 +80,21 @@ def test_sync_completion():
     assert len(results) == len(prompts)
 
 
-# async def test_async_completion():
-#     completion_model = TestModel()
-#     client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
-#     CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
+async def async_helper(client: CompletionEngine, prompts: Prompts):
+    return [result async for result in client.async_run(prompts)]
 
-#     start_time = time.perf_counter()
-#     messages: list[TextMessage] = [{'role': 'user', 'content': 'hello, who are you?'}]
-#     prompts = ['Hello, my name is', 'I am a student', messages] * 4
-#     results = [i async for i  in client.async_run(prompts)]
-#     elapsed_time = time.perf_counter() - start_time
 
-#     assert results[0].reply == 'Completed: Hello, my name is'
-#     assert len(results) == len(prompts)
-#     assert elapsed_time > 4
+def test_async_completion():
+    completion_model = TestModel()
+    client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
+    CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
+
+    start_time = time.perf_counter()
+    messages: list[TextMessage] = [{'role': 'user', 'content': 'hello, who are you?'}]
+    prompts = ['Hello, my name is', 'I am a student', messages] * 4
+    results = asyncio.run(async_helper(client, prompts))
+    elapsed_time = time.perf_counter() - start_time
+
+    assert results[0].reply == 'Completed: Hello, my name is'
+    assert len(results) == len(prompts)
+    assert elapsed_time > 4

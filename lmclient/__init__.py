@@ -15,6 +15,8 @@ from lmclient.models import (
     OpenAIChatParameters,
     WenxinChat,
     WenxinChatParameters,
+    ZhiPuCharacterChat,
+    ZhiPuCharacterChatParameters,
     ZhiPuChat,
     ZhiPuChatParameters,
 )
@@ -33,6 +35,8 @@ __all__ = [
     'MinimaxChatParameters',
     'ZhiPuChat',
     'ZhiPuChatParameters',
+    'ZhiPuCharacterChat',
+    'ZhiPuCharacterChatParameters',
     'WenxinChat',
     'WenxinChatParameters',
     'HunyuanChat',

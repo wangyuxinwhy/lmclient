@@ -9,7 +9,7 @@ import httpx
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import ResponseFailedError
+from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
     FunctionCallMessage,
@@ -186,7 +186,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         response.raise_for_status()
         response_dict = response.json()
         if 'error' in response_dict:
-            raise ResponseFailedError(response_dict['error_description'])
+            raise UnexpectedResponseError(response_dict)
         return response_dict['access_token']
 
     @override
@@ -221,7 +221,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
     @override
     def parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error_msg'):
-            raise ResponseFailedError(f'Response Failed: {response}')
+            raise UnexpectedResponseError(response)
         if response.get('function_call'):
             return [
                 FunctionCallMessage(

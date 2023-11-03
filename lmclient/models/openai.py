@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, ResponseFailedError
+from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
     FunctionCallMessage,
@@ -84,7 +84,7 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
         if role == 'function':
             name = message.get('name')
             if (name := message.get('name')) is None:
-                raise MessageError(f'Function name is required, message: {message}')
+                raise MessageError(f'function name is required, message: {message}')
             return {
                 'role': role,
                 'name': name,
@@ -96,7 +96,7 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
                 'content': message['content'],
             }
     else:
-        raise MessageError(f'Invalid message type: {type(message)}')
+        raise MessageError(f'invalid message type: {type(message)}')
 
 
 def parse_openai_model_reponse(response: ModelResponse) -> Messages:
@@ -121,7 +121,7 @@ def parse_openai_model_reponse(response: ModelResponse) -> Messages:
                 )
             ]
     except (KeyError, IndexError) as e:
-        raise ResponseFailedError(f'Response Failed, {response}') from e
+        raise UnexpectedResponseError(response) from e
 
 
 class OpenAIChat(HttpChatModel[OpenAIChatParameters]):

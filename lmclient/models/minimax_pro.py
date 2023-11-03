@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional
 from pydantic import Field, PositiveInt, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, ResponseFailedError
+from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
     Function,
@@ -112,7 +112,7 @@ def convert_to_minimax_pro_message(
     if is_function_call_message(message):
         sender_name = message.get('name') or default_bot_name
         if sender_name is None:
-            raise MessageError(f'Bot name is required for function call, message: {message}')
+            raise MessageError(f'bot name is required for function call, message: {message}')
         return {
             'sender_type': 'BOT',
             'sender_name': sender_name,
@@ -126,7 +126,7 @@ def convert_to_minimax_pro_message(
         if message['role'] == 'assistant':
             sender_name = message.get('name') or default_bot_name
             if sender_name is None:
-                raise MessageError(f'Bot name is required, message: {message}')
+                raise MessageError(f'bot name is required, message: {message}')
             return {
                 'sender_type': 'BOT',
                 'sender_name': sender_name,
@@ -135,7 +135,7 @@ def convert_to_minimax_pro_message(
         elif message['role'] == 'function':
             name = message.get('name')
             if name is None:
-                raise MessageError(f'Function name is required, message: {message}')
+                raise MessageError(f'function name is required, message: {message}')
             return {
                 'sender_type': 'FUNCTION',
                 'sender_name': name,
@@ -145,9 +145,9 @@ def convert_to_minimax_pro_message(
             sender_name = message.get('name') or default_user_name
             return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message['content']}
         else:
-            raise MessageError(f'Invalid message role: {message["role"]}')
+            raise MessageError(f'invalid message role: {message["role"]}')
     else:
-        raise MessageError(f'Invalid role {message["role"]}, must be one of "user", "assistant", "function"')
+        raise MessageError(f'invalid role {message["role"]}, must be one of "user", "assistant", "function"')
 
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
@@ -205,7 +205,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         try:
             return [self._convert_to_message(i) for i in response['choices'][0]['messages']]
         except (KeyError, IndexError, TypeError) as e:
-            raise ResponseFailedError(f'Invalid minimax response: {response}') from e
+            raise UnexpectedResponseError(response) from e
 
     @override
     def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
