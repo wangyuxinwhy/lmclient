@@ -190,7 +190,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         return response_dict['access_token']
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
         self.maybe_refresh_access_token()
 
         wenxin_messages: list[WenxinMessage] = [convert_to_wenxin_message(message) for message in messages]
@@ -207,19 +207,19 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         }
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: WenxinChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         if response['is_end']:
             return Stream(delta=response['result'], control='finish')
         return Stream(delta=response['result'], control='continue')
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error_msg'):
             raise UnexpectedResponseError(response)
         if response.get('function_call'):

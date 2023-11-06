@@ -19,7 +19,6 @@ from lmclient.types import (
 from lmclient.utils import is_function_call_message, is_text_message
 
 T_P = TypeVar('T_P', bound=ModelParameters)
-T_O = TypeVar('T_O', bound=ChatModelOutput)
 
 
 class ChatEngineKwargs(TypedDict, total=False):

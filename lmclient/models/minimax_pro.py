@@ -180,7 +180,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         self.api_base = api_base or self.default_api_base
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
         minimax_pro_messages = [
             convert_to_minimax_pro_message(
                 message, default_bot_name=parameters.bot_name, default_user_name=self.default_user_name
@@ -201,20 +201,20 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             return [self._convert_to_message(i) for i in response['choices'][0]['messages']]
         except (KeyError, IndexError, TypeError) as e:
             raise UnexpectedResponseError(response) from e
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: MinimaxProChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         delta = response['choices'][0]['messages'][0]['text']
         if response['reply']:
             return Stream(delta=delta, control='finish')

@@ -93,7 +93,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         self.api_base = api_base or self.default_api_base
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
         minimax_messages = [convert_to_minimax_message(message) for message in messages]
         parameters_dict = parameters.model_dump(exclude_none=True, by_alias=True)
         if 'temperature' in parameters_dict:
@@ -115,21 +115,21 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             return [TextMessage(role='assistant', content=response['choices'][0]['text'])]
         except (KeyError, IndexError, TypeError) as e:
             raise UnexpectedResponseError(response) from e
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         http_parameters['json']['use_standard_sse'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         delta = response['choices'][0]['delta']
         if response['reply']:
             return Stream(delta=delta, control='finish')

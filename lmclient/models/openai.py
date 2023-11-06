@@ -146,7 +146,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         self.api_key = api_key or os.environ['OPENAI_API_KEY']
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
         openai_messages = [convert_to_openai_message(message) for message in messages]
         headers = {
             'Authorization': f'Bearer {self.api_key}',
@@ -166,17 +166,17 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         if response.get('data') == '[DONE]':
             return Stream(delta='', control='done')
         else:

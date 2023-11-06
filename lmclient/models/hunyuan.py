@@ -65,7 +65,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         self.sign_api = sign_api or self.default_sign_api
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: HunyuanChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: HunyuanChatParameters) -> HttpxPostKwargs:
         hunyuan_messages = [convert_to_hunyuan_message(message) for message in messages]
         json_dict = self.generate_json_dict(hunyuan_messages, parameters)
         signature = self.generate_signature(self.generate_sign_parameters(json_dict))
@@ -80,7 +80,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         }
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: HunyuanChatParameters) -> HttpxPostKwargs:
+    def _get_stream_request_parameters(self, messages: Messages, parameters: HunyuanChatParameters) -> HttpxPostKwargs:
         hunyuan_messages = [convert_to_hunyuan_message(message) for message in messages]
         json_dict = self.generate_json_dict(hunyuan_messages, parameters, stream=True)
         signature = self.generate_signature(self.generate_sign_parameters(json_dict))
@@ -95,14 +95,14 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         }
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         message = response['choices'][0]
         if message['finish_reason']:
             return Stream(delta=message['delta']['content'], control='finish')
         return Stream(delta=message['delta']['content'], control='continue')
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         if response.get('error'):
             raise UnexpectedResponseError(response)
         return [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]

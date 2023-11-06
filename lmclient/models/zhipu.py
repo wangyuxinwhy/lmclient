@@ -102,7 +102,7 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
         self.api_base = (api_base or self.default_api_base).rstrip('/')
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: T_P) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: T_P) -> HttpxPostKwargs:
         zhipu_messages = [convert_to_zhipu_message(message) for message in messages]
         headers = {
             'Authorization': generate_token(self.api_key),
@@ -116,7 +116,7 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         if response['success']:
             text = response['data']['choices'][0]['content']
             return [TextMessage(role='assistant', content=text)]
@@ -124,13 +124,13 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
             raise UnexpectedResponseError(response)
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: T_P) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: T_P) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['url'] = f'{self.api_base}/{self.model}/sse-invoke'
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         if response['data']:
             return Stream(delta=response['data'], control='continue')
         return Stream(delta='', control='finish')
@@ -151,11 +151,25 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
 
 
 class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
+    """
+    A chatbot model that uses the ChatGLM_ API to generate responses.
+
+    You can specify the API key by setting the environment variable `ZHIPU_API_KEY`.
+
+    Args:
+        model (str): The name of the ZhiPu model to use.
+        api_key (str | None, optional): The API key to use. Defaults to None.
+        api_base (str | None, optional): The API base URL to use. Defaults to None.
+        parameters (ZhiPuChatParameters | None, optional): The model parameters.
+        **kwargs: ``HttpChatModelKwargs`` Additional keyword arguments to pass to the parent class.
+
+    .. _ChatGLM: https://open.bigmodel.cn/dev/api#language
+    """
     model_type: ClassVar[str] = 'zhipu'
 
     def __init__(
         self,
-        model: str = 'characterglm',
+        model: str = 'chatglm_turbo',
         api_key: str | None = None,
         api_base: str | None = None,
         parameters: ZhiPuChatParameters | None = None,
