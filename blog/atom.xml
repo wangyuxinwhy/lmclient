@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://wangyuxinwhy.github.io /lmclient/blog</id>
+    <title>LMClient Blog</title>
+    <updated>2023-11-07T00:00:00.000Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://wangyuxinwhy.github.io /lmclient/blog"/>
+    <subtitle>LMClient Blog</subtitle>
+    <icon>https://wangyuxinwhy.github.io /lmclient/img/favicon.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[Test Blog]]></title>
+        <id>https://wangyuxinwhy.github.io /lmclient/blog/2023/11/07/test</id>
+        <link href="https://wangyuxinwhy.github.io /lmclient/blog/2023/11/07/test"/>
+        <updated>2023-11-07T00:00:00.000Z</updated>
+        <author>
+            <name>wangyuxin</name>
+            <uri>https://github.com/wangyuxinwhy</uri>
+        </author>
+    </entry>
+</feed>

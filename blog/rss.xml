@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+    <channel>
+        <title>LMClient Blog</title>
+        <link>https://wangyuxinwhy.github.io /lmclient/blog</link>
+        <description>LMClient Blog</description>
+        <lastBuildDate>Tue, 07 Nov 2023 00:00:00 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>https://github.com/jpmonette/feed</generator>
+        <language>zh-Hans</language>
+        <item>
+            <title><![CDATA[Test Blog]]></title>
+            <link>https://wangyuxinwhy.github.io /lmclient/blog/2023/11/07/test</link>
+            <guid>https://wangyuxinwhy.github.io /lmclient/blog/2023/11/07/test</guid>
+            <pubDate>Tue, 07 Nov 2023 00:00:00 GMT</pubDate>
+        </item>
+    </channel>
+</rss>

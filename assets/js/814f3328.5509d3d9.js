@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkwebsite=self.webpackChunkwebsite||[]).push([[535],{5641:e=>{e.exports=JSON.parse('{"title":"Recent posts","items":[{"title":"Test Blog","permalink":"/lmclient/blog/2023/11/07/test","unlisted":false}]}')}}]);
