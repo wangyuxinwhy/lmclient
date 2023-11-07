@@ -17,6 +17,14 @@ class Printer(Protocol):
 
 
 class SimplePrinter(Printer):
+    """
+    A simple printer that prints messages and streams to the console.
+
+    Args:
+        smooth (bool, optional): Whether to use smooth printing. Defaults to True.
+        interval (float, optional): The interval between each print. Defaults to 0.03.
+    """
+
     def __init__(self, smooth: bool = True, interval: float = 0.03) -> None:
         self.smooth = smooth
         self.interval = interval
@@ -43,6 +51,14 @@ class SimplePrinter(Printer):
 
 
 class RichPrinter(Printer):
+    """
+    A rich printer that prints messages and streams to the console.
+
+    Args:
+        smooth (bool, optional): Whether to use smooth printing. Defaults to True.
+        interval (float, optional): The interval between each print. Defaults to 0.03.
+    """
+
     def __init__(self, smooth: bool = True, interval: float = 0.03) -> None:
         self.smooth = smooth
         self.interval = interval

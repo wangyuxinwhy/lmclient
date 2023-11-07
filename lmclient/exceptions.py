@@ -7,6 +7,13 @@ class MessageError(Exception):
 
 
 class UnexpectedResponseError(Exception):
+    """
+    Exception raised when an unexpected response is received from the server.
+
+    Attributes:
+        response (dict): The response from the server.
+    """
+
     def __init__(self, response: dict, *args: Any) -> None:
         try:
             message = json.dumps(response, indent=4, ensure_ascii=False)

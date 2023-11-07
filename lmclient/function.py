@@ -1,9 +1,7 @@
-# type: ignore
 from __future__ import annotations
 
 import json
-from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from docstring_parser import parse
 from pydantic import TypeAdapter, validate_call
@@ -16,9 +14,26 @@ P = ParamSpec('P')
 T = TypeVar('T')
 
 
-class function:  # noqa: N801
+class function(Generic[P, T]):  # noqa: N801
+    """
+    A decorator class that wraps a callable function and provides additional functionality.
+
+    Args:
+        function (Callable[P, T]): The function to be wrapped.
+
+    Attributes:
+        function (Callable[P, T]): The wrapped function.
+        name (str): The name of the wrapped function.
+        docstring (ParsedDocstring): The parsed docstring of the wrapped function.
+        json_schema (Function): The JSON schema of the wrapped function.
+
+    Methods:
+        __call__(self, *args: Any, **kwargs: Any) -> Any: Calls the wrapped function with the provided arguments.
+        call_with_message(self, message: Message) -> T: Calls the wrapped function with the arguments provided in the message.
+    """
+
     def __init__(self, function: Callable[P, T]) -> None:
-        self.function = validate_call(function)
+        self.function: Callable[P, T] = validate_call(function)
         self.name = self.function.__name__
         self.docstring = parse(self.function.__doc__ or '')
         parameters = TypeAdapter(function).json_schema()
@@ -34,26 +49,31 @@ class function:  # noqa: N801
             'parameters': parameters,
         }
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        @wraps(self.function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            return self.function(*args, **kwargs)
-
-        return wrapper(*args, **kwargs)
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
+        return self.function(*args, **kwargs)
 
     def call_with_message(self, message: Message) -> T:
         if is_function_call_message(message):
             function_call = message['content']
             arguments = json.loads(function_call['arguments'], strict=False)
-            return self.function(**arguments)
+            return self.function(**arguments)  # type: ignore
         raise ValueError(f'message is not a function call: {message}')
 
 
-def recusive_remove(obj: Any, remove_key: str) -> None:
-    """Remove a key from a dictionary recursively"""
-    if isinstance(obj, dict):
-        for key in list(obj.keys()):
+def recusive_remove(dictionary: dict, remove_key: str) -> None:
+    """
+    Recursively removes a key from a dictionary and all its nested dictionaries.
+
+    Args:
+        dictionary (dict): The dictionary to remove the key from.
+        remove_key (str): The key to remove from the dictionary.
+
+    Returns:
+        None
+    """
+    if isinstance(dictionary, dict):
+        for key in list(dictionary.keys()):
             if key == remove_key:
-                del obj[key]
+                del dictionary[key]
             else:
-                recusive_remove(obj[key], remove_key)
+                recusive_remove(dictionary[key], remove_key)

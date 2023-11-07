@@ -151,21 +151,6 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
 
 
 class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
-    """
-    A chatbot model that uses the ChatGLM_ API to generate responses.
-
-    You can specify the API key by setting the environment variable `ZHIPU_API_KEY`.
-
-    Args:
-        model (str): The name of the ZhiPu model to use.
-        api_key (str | None, optional): The API key to use. Defaults to None.
-        api_base (str | None, optional): The API base URL to use. Defaults to None.
-        parameters (ZhiPuChatParameters | None, optional): The model parameters.
-        **kwargs: ``HttpChatModelKwargs`` Additional keyword arguments to pass to the parent class.
-
-    .. _ChatGLM: https://open.bigmodel.cn/dev/api#language
-    """
-
     model_type: ClassVar[str] = 'zhipu'
 
     def __init__(

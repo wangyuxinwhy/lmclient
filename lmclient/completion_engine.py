@@ -34,6 +34,15 @@ class CompletionEngineKwargs(TypedDict):
 
 
 class CompletionEngine(Generic[T_P]):
+    """
+    Args:
+        chat_model (BaseChatModel[T_P]): The chat model to use for generating completions.
+        async_capacity (int, optional): The maximum number of asynchronous requests that can be made at once. Defaults to 3.
+        max_requests_per_minute (int, optional): The maximum number of requests that can be made per minute. Defaults to 20.
+        error_mode (ErrorMode, optional): The error handling mode. Defaults to 'raise'.
+        progress_bar_mode (ProgressBarMode, optional): The progress bar mode. Defaults to 'auto'.
+    """
+
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 

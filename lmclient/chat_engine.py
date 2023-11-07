@@ -30,6 +30,21 @@ class ChatEngineKwargs(TypedDict, total=False):
 
 
 class ChatEngine(Generic[T_P]):
+    """
+    A chat engine that uses a chat model to generate responses.It will manage the chat history and function calls.
+
+    Args:
+        chat_model (BaseChatModel[T_P]): The chat model to use for generating responses.
+        temperature (float | None, optional): Controls the randomness of the generated responses. Defaults to None.
+        top_p (float | None, optional): Controls the diversity of the generated responses. Defaults to None.
+        max_tokens (int | None, optional): Controls the length of the generated responses. Defaults to None.
+        functions (Optional[List[function]], optional): A list of functions to use for function call. Defaults to None.
+        function_call_raise_error (bool, optional): Whether to raise an error if a function call fails. Defaults to False.
+        max_function_calls_per_turn (int, optional): The maximum number of function calls allowed per turn. Defaults to 5.
+        stream (bool, optional): Whether to stream the generated text rely. Defaults to True.
+        printer (Printer | Literal['auto'] | None, optional): The printer to use for displaying the generated responses. Defaults to 'auto'.
+    """
+
     printer: Printer | None
 
     def __init__(
@@ -205,7 +220,7 @@ class ChatEngine(Generic[T_P]):
             if self.function_call_raise_error:
                 raise
 
-            return f'Error: {e}'
+            return str(e)
 
     def _recursive_function_call(
         self, function_call: FunctionCall, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any

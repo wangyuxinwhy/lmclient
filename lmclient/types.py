@@ -94,3 +94,7 @@ Prompts = Sequence[Prompt]
 text_message_validator = TypeAdapter(TextMessage)
 prompt_validator = TypeAdapter(Prompt)
 PrimitiveData = Optional[Union[str, int, float, bool]]
+
+ChatModelOutput.model_rebuild()
+ChatModelStreamOutput.model_rebuild()
+GeneralParameters.model_rebuild()

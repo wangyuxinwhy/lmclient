@@ -51,7 +51,7 @@ def test_load_from_model_id() -> None:
         GeneralParameters(temperature=0.5, top_p=0.85, max_tokens=20),
         GeneralParameters(temperature=0),
         GeneralParameters(top_p=0),
-    ]
+    ],
 )
 def test_http_chat_model(chat_model: HttpChatModel[ModelParameters], parameters: GeneralParameters | None) -> None:
     chat_model.timeout = 20
