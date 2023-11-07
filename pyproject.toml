@@ -67,7 +67,6 @@ reportMissingTypeStubs=false
 pytest = "^7.3.1"
 pyright = "^1.1.310"
 ruff = "^0.1.4"
-sphinx = ">=7"
 
 [build-system]
 requires = ["poetry-core"]
