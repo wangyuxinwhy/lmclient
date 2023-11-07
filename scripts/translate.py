@@ -12,7 +12,7 @@ from lmclient.completion_engine import ErrorMode
 from lmclient.models import load_from_model_id
 
 
-def read_from_text_file(file: str | Path):
+def read_from_text_file(file: str | Path) -> list[str]:
     file = Path(file)
     texts: list[str] = file.read_text().split('\n')
     return texts

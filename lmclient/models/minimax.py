@@ -4,7 +4,7 @@ import os
 from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import Field, PositiveInt, field_validator
-from typing_extensions import Annotated, TypedDict, Unpack, override
+from typing_extensions import Annotated, Self, TypedDict, Unpack, override
 
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
@@ -43,7 +43,7 @@ class MinimaxChatParameters(ModelParameters):
 
     @field_validator('temperature', 'top_p', mode='after')
     @classmethod
-    def zero_is_not_valid(cls, value):
+    def zero_is_not_valid(cls, value: float) -> float:
         if value == 0:
             return 0.01
         return value
@@ -53,7 +53,7 @@ def convert_to_minimax_message(message: Message) -> MinimaxMessage:
     if not is_text_message(message):
         raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
     role = message['role']
-    if role != 'assistant' and role != 'user':
+    if role not in ('assistant', 'user'):
         raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
     if role == 'assistant':
@@ -61,11 +61,11 @@ def convert_to_minimax_message(message: Message) -> MinimaxMessage:
             'sender_type': 'BOT',
             'text': message['content'],
         }
-    else:
-        return {
-            'sender_type': 'USER',
-            'text': message['content'],
-        }
+
+    return {
+        'sender_type': 'USER',
+        'text': message['content'],
+    }
 
 
 class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
@@ -81,7 +81,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         system_prompt: str | None = None,
         parameters: MinimaxChatParameters | None = None,
         **kwagrs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or MinimaxChatParameters()
         if system_prompt is not None:
             parameters.prompt = system_prompt
@@ -142,5 +142,5 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

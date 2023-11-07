@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar
 
-from typing_extensions import Unpack, override
+from typing_extensions import Self, Unpack, override
 
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.models.openai import (
@@ -26,7 +26,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         api_version: str | None = None,
         parameters: OpenAIChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.model = model or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
@@ -76,5 +76,5 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

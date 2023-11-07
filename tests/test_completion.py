@@ -4,6 +4,8 @@ import asyncio
 import time
 from typing import Any, AsyncIterator, Iterator
 
+from typing_extensions import Self
+
 from lmclient.completion_engine import CompletionEngine
 from lmclient.models.base import BaseChatModel
 from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelParameters, Prompts, Stream, TextMessage
@@ -61,11 +63,11 @@ class TestModel(BaseChatModel[TestModelParameters]):
         return 'TestModel'
 
     @classmethod
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls()
 
 
-def test_sync_completion():
+def test_sync_completion() -> None:
     completion_model = TestModel()
     client = CompletionEngine(completion_model)
     prompts = [
@@ -80,11 +82,11 @@ def test_sync_completion():
     assert len(results) == len(prompts)
 
 
-async def async_helper(client: CompletionEngine, prompts: Prompts):
+async def async_helper(client: CompletionEngine, prompts: Prompts) -> list[ChatModelOutput]:
     return [result async for result in client.async_run(prompts)]
 
 
-def test_async_completion():
+def test_async_completion() -> None:
     completion_model = TestModel()
     client = CompletionEngine(completion_model, async_capacity=2, max_requests_per_minute=5)
     CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
@@ -97,4 +99,4 @@ def test_async_completion():
 
     assert results[0].reply == 'Completed: Hello, my name is'
     assert len(results) == len(prompts)
-    assert elapsed_time > 4
+    assert elapsed_time > (2 * CompletionEngine.NUM_SECONDS_PER_MINUTE)

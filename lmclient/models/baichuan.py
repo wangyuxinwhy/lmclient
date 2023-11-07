@@ -7,7 +7,7 @@ import time
 from typing import Any, ClassVar, Literal, Optional, TypedDict
 
 from pydantic import Field
-from typing_extensions import Annotated, Unpack, override
+from typing_extensions import Annotated, Self, Unpack, override
 
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
@@ -51,7 +51,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         stream_api_base: str | None = None,
         parameters: BaichuanChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or BaichuanChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.model = model
@@ -108,7 +108,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         if not is_text_message(message):
             raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
         role = message['role']
-        if role != 'assistant' and role != 'user':
+        if role not in ('assistant', 'user'):
             raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
         return {
@@ -117,11 +117,10 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         }
 
     @staticmethod
-    def calculate_md5(input_string: str):
+    def calculate_md5(input_string: str) -> str:
         md5 = hashlib.md5()
         md5.update(input_string.encode('utf-8'))
-        encrypted = md5.hexdigest()
-        return encrypted
+        return md5.hexdigest()
 
     @override
     def _parse_reponse(self, response: ModelResponse) -> Messages:
@@ -136,5 +135,5 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         return self.model
 
     @classmethod
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

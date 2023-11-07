@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal, Optional
 
 import cachetools.func  # type: ignore
 import jwt
-from typing_extensions import NotRequired, TypedDict, Unpack, override
+from typing_extensions import NotRequired, Self, TypedDict, Unpack, override
 
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
@@ -55,7 +55,7 @@ def convert_to_zhipu_message(message: Message) -> ZhiPuMessage:
     if not is_text_message(message):
         raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
     role = message['role']
-    if role != 'assistant' and role != 'user':
+    if role not in ('assistant', 'user'):
         raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
     return {
@@ -65,7 +65,7 @@ def convert_to_zhipu_message(message: Message) -> ZhiPuMessage:
 
 
 @cachetools.func.ttl_cache(maxsize=10, ttl=CACHE_TTL_SECONDS)
-def generate_token(api_key: str):
+def generate_token(api_key: str) -> str:
     try:
         api_key, secret = api_key.split('.')
     except Exception as e:
@@ -95,7 +95,7 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
         api_key: str | None = None,
         api_base: str | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         super().__init__(parameters=parameters, **kwargs)
         self.model = model
         self.api_key = api_key or os.environ['ZHIPU_API_KEY']
@@ -120,8 +120,8 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
         if response['success']:
             text = response['data']['choices'][0]['content']
             return [TextMessage(role='assistant', content=text)]
-        else:
-            raise UnexpectedResponseError(response)
+
+        raise UnexpectedResponseError(response)
 
     @override
     def _get_stream_request_parameters(self, messages: Messages, parameters: T_P) -> HttpxPostKwargs:
@@ -146,7 +146,7 @@ class BaseZhiPuChat(HttpChatModel[T_P]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)
 
 
@@ -165,6 +165,7 @@ class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
 
     .. _ChatGLM: https://open.bigmodel.cn/dev/api#language
     """
+
     model_type: ClassVar[str] = 'zhipu'
 
     def __init__(
@@ -174,7 +175,7 @@ class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
         api_base: str | None = None,
         parameters: ZhiPuChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or ZhiPuChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)
 
@@ -189,6 +190,6 @@ class ZhiPuCharacterChat(BaseZhiPuChat[ZhiPuCharacterChatParameters]):
         api_base: str | None = None,
         parameters: ZhiPuCharacterChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or ZhiPuCharacterChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)

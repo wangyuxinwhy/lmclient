@@ -43,14 +43,11 @@ class ChatEngine(Generic[T_P]):
         max_function_calls_per_turn: int = 5,
         stream: bool = True,
         printer: Printer | Literal['auto'] | None = 'auto',
-    ):
+    ) -> None:
         self._chat_model = chat_model
         self._functions = functions or []
         self._function_map = {function.name: function for function in self._functions}
-        if functions:
-            functions_schema = [function.json_schema for function in functions]
-        else:
-            functions_schema = None
+        functions_schema = [function.json_schema for function in functions] if functions else None
         self.engine_parameters = GeneralParameters(
             temperature=temperature,
             top_p=top_p,
@@ -76,11 +73,11 @@ class ChatEngine(Generic[T_P]):
         return cls(chat_model, **kwargs)
 
     @property
-    def chat_model(self):
+    def chat_model(self) -> BaseChatModel[T_P]:
         return self._chat_model
 
     @property
-    def print_message(self):
+    def print_message(self) -> bool:
         return self.printer is not None
 
     def chat(self, user_input: str, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any) -> str:
@@ -105,12 +102,12 @@ class ChatEngine(Generic[T_P]):
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
             return last_message['content']
-        elif is_function_call_message(last_message):
+
+        if is_function_call_message(last_message):
             function_call = last_message['content']
-            reply = self._recursive_function_call(function_call, override_parameters, **kwargs)
-            return reply
-        else:
-            raise RuntimeError(f'Invalid message type: {type(last_message)}')
+            return self._recursive_function_call(function_call, override_parameters, **kwargs)
+
+        raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
     def _stream_chat_helper(
         self, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
@@ -122,6 +119,7 @@ class ChatEngine(Generic[T_P]):
                 self.printer.print_stream(stream_output.stream)
             if stream_output.is_finish:
                 return stream_output
+        return None
 
     @overload
     async def async_chat(
@@ -171,13 +169,14 @@ class ChatEngine(Generic[T_P]):
             reply = last_message['content']
             if return_reply:
                 return reply
-        elif is_function_call_message(last_message):
+            return None
+        if is_function_call_message(last_message):
             function_call = last_message['content']
             reply = await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
             if return_reply:
                 return reply
-        else:
-            raise RuntimeError(f'Invalid message type: {type(last_message)}')
+            return None
+        raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
     async def _async_stream_chat_helper(
         self, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
@@ -189,27 +188,27 @@ class ChatEngine(Generic[T_P]):
                 self.printer.print_stream(stream_output.stream)
             if stream_output.is_finish:
                 return stream_output
+        return None
 
-    def run_function_call(self, function_call: FunctionCall):
+    def run_function_call(self, function_call: FunctionCall) -> Any | str:
         function = self._function_map.get(function_call['name'])
         if function is None:
             if self.function_call_raise_error:
                 raise ValueError(f'Function {function_call["name"]} not found')
-            else:
-                return 'Function not found, please try another function.'
+
+            return 'Function not found, please try another function.'
 
         try:
             arguments = json.loads(function_call['arguments'], strict=False)
-            function_call_return = function(**arguments)
-            return function_call_return
+            return function(**arguments)
         except Exception as e:
             if self.function_call_raise_error:
-                raise e
-            else:
-                return f'Error: {e}'
+                raise
+
+            return f'Error: {e}'
 
     def _recursive_function_call(
-        self, function_call: FunctionCall, override_parameters: OverrideParameters[T_P] = None, **kwargs
+        self, function_call: FunctionCall, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
     ) -> str:
         function_output = self.run_function_call(function_call)
         function_message = TextMessage(
@@ -227,19 +226,18 @@ class ChatEngine(Generic[T_P]):
 
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
-            reply = last_message['content']
-            return reply
-        elif is_function_call_message(last_message):
+            return last_message['content']
+        if is_function_call_message(last_message):
             self._function_call_count += 1
             if self._function_call_count > self.max_function_calls_per_turn:
                 raise RuntimeError('Maximum number of function calls reached.')
             function_call = last_message['content']
             return self._recursive_function_call(function_call, override_parameters, **kwargs)
-        else:
-            raise RuntimeError(f'Invalid message type: {type(last_message)}')
+
+        raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
     async def _async_recursive_function_call(
-        self, function_call: FunctionCall, override_parameters: OverrideParameters[T_P] = None, **kwargs
+        self, function_call: FunctionCall, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
     ) -> str:
         function_output = self.run_function_call(function_call)
         function_message = TextMessage(
@@ -257,16 +255,15 @@ class ChatEngine(Generic[T_P]):
 
         last_message = model_response.messages[-1]
         if is_text_message(last_message):
-            reply = last_message['content']
-            return reply
-        elif is_function_call_message(last_message):
+            return last_message['content']
+        if is_function_call_message(last_message):
             self._function_call_count += 1
             if self._function_call_count > self.max_function_calls_per_turn:
                 raise RuntimeError('Maximum number of function calls reached.')
             function_call = last_message['content']
             return await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
-        else:
-            raise RuntimeError(f'Invalid message type: {type(last_message)}')
+
+        raise RuntimeError(f'Invalid message type: {type(last_message)}')
 
     def reset(self) -> None:
         self.history.clear()

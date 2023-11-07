@@ -45,5 +45,4 @@ def ensure_messages(prompt: Prompt) -> Messages:
         return [TextMessage(role='user', content=prompt)]
     if isinstance(prompt, dict):
         return [prompt]
-    else:
-        return prompt
+    return prompt

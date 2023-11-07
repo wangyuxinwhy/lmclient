@@ -23,7 +23,7 @@ def google(keyword: str) -> str:
     return '没有内容'
 
 
-def test_function():
+def test_function() -> None:
     model = OpenAIChat()
     engine = ChatEngine(model, temperature=0, functions=[get_weather, google], stream=False)
     reply = engine.chat('今天北京天气怎么样？')

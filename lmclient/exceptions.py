@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 
 class MessageError(Exception):
@@ -6,7 +7,7 @@ class MessageError(Exception):
 
 
 class UnexpectedResponseError(Exception):
-    def __init__(self, response: dict, *args) -> None:
+    def __init__(self, response: dict, *args: Any) -> None:
         try:
             message = json.dumps(response, indent=4, ensure_ascii=False)
         except TypeError:

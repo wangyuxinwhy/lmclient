@@ -4,8 +4,8 @@ test:
 
 .PHONY : lint
 lint:
-	blue -l 128 .
 	ruff check --fix .
+	ruff format .
 	pyright .
 
 .PHONY : publish

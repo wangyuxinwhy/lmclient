@@ -4,7 +4,7 @@ import os
 from typing import Any, ClassVar, Dict, List, Literal, Optional
 
 from pydantic import Field, PositiveInt, field_validator, model_validator
-from typing_extensions import Annotated, NotRequired, TypedDict, Unpack, override
+from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
@@ -55,7 +55,10 @@ class MinimaxProMessage(TypedDict):
 class MinimaxProChatParameters(ModelParameters):
     reply_constraints: ReplyConstrainsDict = {'sender_type': 'BOT', 'sender_name': 'MM智能助理'}
     bot_setting: List[BotSettingDict] = [
-        {'bot_name': 'MM智能助理', 'content': 'MM智能助理是一款由MiniMax自研的，没有调用其他产品的接口的大型语言模型。MiniMax是一家中国科技公司，一直致力于进行大模型相关的研究。'}
+        {
+            'bot_name': 'MM智能助理',
+            'content': 'MM智能助理是一款由MiniMax自研的，没有调用其他产品的接口的大型语言模型。MiniMax是一家中国科技公司，一直致力于进行大模型相关的研究。',
+        }
     ]
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
@@ -66,21 +69,15 @@ class MinimaxProChatParameters(ModelParameters):
     plugins: Optional[List[str]] = None
 
     @model_validator(mode='after')
-    def check_bot_name(self):
+    def check_bot_name(self) -> Self:
         names: set[str] = {bot_setting['bot_name'] for bot_setting in self.bot_setting}
-        if len(self.bot_setting) == 1:
-            if self.reply_constraints['sender_name'] != self.bot_setting[0]['bot_name']:
-                raise ValueError(
-                    f'reply_constraints sender_name {self.reply_constraints["sender_name"]} must be the same as bot_setting bot_name {self.bot_setting[0]["bot_name"]}'
-                )
-
         if (sender_name := self.reply_constraints['sender_name']) not in names:
             raise ValueError(f'reply_constraints sender_name {sender_name} must be in bot_setting names: {names}')
         return self
 
     @field_validator('temperature', 'top_p', mode='after')
     @classmethod
-    def zero_is_not_valid(cls, value):
+    def zero_is_not_valid(cls, value: float) -> float:
         if value == 0:
             return 0.01
         return value
@@ -89,8 +86,7 @@ class MinimaxProChatParameters(ModelParameters):
     def bot_name(self) -> str | None:
         if len(self.bot_setting) == 1:
             return self.bot_setting[0]['bot_name']
-        else:
-            return None
+        return None
 
     def set_system_prompt(self, system_prompt: str) -> None:
         if len(self.bot_setting) == 1:
@@ -122,7 +118,7 @@ def convert_to_minimax_pro_message(
                 'arguments': message['content']['arguments'],
             },
         }
-    elif is_text_message(message):
+    if is_text_message(message):
         if message['role'] == 'assistant':
             sender_name = message.get('name') or default_bot_name
             if sender_name is None:
@@ -132,7 +128,7 @@ def convert_to_minimax_pro_message(
                 'sender_name': sender_name,
                 'text': message['content'],
             }
-        elif message['role'] == 'function':
+        if message['role'] == 'function':
             name = message.get('name')
             if name is None:
                 raise MessageError(f'function name is required, message: {message}')
@@ -141,13 +137,11 @@ def convert_to_minimax_pro_message(
                 'sender_name': name,
                 'text': message['content'],
             }
-        elif message['role'] == 'user':
+        if message['role'] == 'user':
             sender_name = message.get('name') or default_user_name
             return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message['content']}
-        else:
-            raise MessageError(f'invalid message role: {message["role"]}')
-    else:
-        raise MessageError(f'invalid role {message["role"]}, must be one of "user", "assistant", "function"')
+        raise MessageError(f'invalid message role: {message["role"]}')
+    raise MessageError(f'invalid role {message["role"]}, must be one of "user", "assistant", "function"')
 
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
@@ -165,7 +159,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         default_user_name: str = '用户',
         parameters: MinimaxProChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or MinimaxProChatParameters()
         self.default_user_name = default_user_name
         if system_prompt is not None:
@@ -234,12 +228,12 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
                 name=message['sender_name'],
                 content={'name': message['function_call']['name'], 'arguments': message['function_call']['arguments']},
             )
-        else:
-            return TextMessage(
-                role=role_map[message['sender_type']],
-                name=message['sender_name'],
-                content=message['text'],
-            )
+
+        return TextMessage(
+            role=role_map[message['sender_type']],
+            name=message['sender_name'],
+            content=message['text'],
+        )
 
     @property
     @override
@@ -248,5 +242,5 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

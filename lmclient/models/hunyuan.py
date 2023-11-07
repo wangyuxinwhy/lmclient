@@ -31,7 +31,7 @@ def convert_to_hunyuan_message(message: Message) -> HunyuanMessage:
     if not is_text_message(message):
         raise MessageError(f'Invalid message type: {type(message)}, only TextMessage is allowed')
     role = message['role']
-    if role != 'assistant' and role != 'user':
+    if role not in ('assistant', 'user'):
         raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
 
     return {
@@ -55,7 +55,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         sign_api: str | None = None,
         parameters: HunyuanChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or HunyuanChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.app_id = app_id or int(os.environ['HUNYUAN_APP_ID'])
@@ -107,7 +107,9 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
             raise UnexpectedResponseError(response)
         return [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
 
-    def generate_json_dict(self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters, stream: bool = False):
+    def generate_json_dict(
+        self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters, stream: bool = False
+    ) -> dict[str, Any]:
         timestamp = int(time.time()) + 10000
         json_dict: dict[str, Any] = {
             'app_id': self.app_id,
@@ -122,7 +124,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         return json_dict
 
     @staticmethod
-    def generate_sign_parameters(json_dict: dict[str, Any]):
+    def generate_sign_parameters(json_dict: dict[str, Any]) -> dict[str, Any]:
         params = {
             'app_id': json_dict['app_id'],
             'secret_id': json_dict['secret_id'],
@@ -142,7 +144,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         params['expired'] = str(json_dict['expired'])
         return params
 
-    def generate_signature(self, sign_parameters: dict[str, Any]):
+    def generate_signature(self, sign_parameters: dict[str, Any]) -> str:
         sort_dict = sorted(sign_parameters.keys())
         sign_str = self.default_sign_api + '?'
         for key in sort_dict:
@@ -150,8 +152,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         sign_str = sign_str[:-1]
         hmacstr = hmac.new(self.secret_key.encode('utf-8'), sign_str.encode('utf-8'), hashlib.sha1).digest()
         signature = base64.b64encode(hmacstr)
-        signature = signature.decode('utf-8')
-        return signature
+        return signature.decode('utf-8')
 
     @property
     @override

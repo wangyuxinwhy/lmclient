@@ -64,7 +64,7 @@ def convert_to_wenxin_message(message: Message) -> WenxinMessage:
             },
             'content': '',
         }
-    elif is_text_message(message):
+    if is_text_message(message):
         if role == 'function':
             if (name := message.get('name')) is None:
                 raise MessageError(f'Function name is required, message: {message}')
@@ -73,13 +73,12 @@ def convert_to_wenxin_message(message: Message) -> WenxinMessage:
                 'name': name,
                 'content': message['content'],
             }
-        else:
-            return {
-                'role': role,
-                'content': message['content'],
-            }
-    else:
-        raise MessageError(f'Invalid message type: {type(message)}')
+
+        return {
+            'role': role,
+            'content': message['content'],
+        }
+    raise MessageError(f'Invalid message type: {type(message)}')
 
 
 class WenxinChatParameters(ModelParameters):
@@ -116,14 +115,14 @@ class WenxinChatParameters(ModelParameters):
         )
 
     @model_validator(mode='after')
-    def system_function_coflict(self):
+    def system_function_coflict(self) -> Self:
         if self.system is not None and self.functions is not None:
             raise ValueError('system and functions cannot be used together')
         return self
 
     @field_validator('temperature', mode='after')
     @classmethod
-    def temperature_gt_0(cls, value):
+    def temperature_gt_0(cls, value: float) -> float | Any:
         if value == 0:
             return 0.01
         return value
@@ -151,7 +150,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         secret_key: str | None = None,
         parameters: WenxinChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or WenxinChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.model = self.normalize_model(model)
@@ -171,7 +170,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         return self.api_base + self.model_name_entrypoint_map[self.model]
 
     @staticmethod
-    def normalize_model(model: str):
+    def normalize_model(model: str) -> str:
         _map = {
             'llama-2-7b-chat': 'llama_2_7b',
             'llama-2-13b-chat': 'llama_2_13b',
@@ -233,10 +232,10 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
                     },
                 )
             ]
-        else:
-            return [TextMessage(role='assistant', content=response['result'])]
 
-    def maybe_refresh_access_token(self):
+        return [TextMessage(role='assistant', content=response['result'])]
+
+    def maybe_refresh_access_token(self) -> None:
         if self._access_token_expires_at < datetime.now():
             self._access_token = self.get_access_token()
             self._access_token_expires_at = datetime.now() + timedelta(days=self.access_token_refresh_days)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, ClassVar, Generator, Literal, Mapping, Optional, Sequence, Union
 
@@ -16,7 +15,6 @@ from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.base import T_P, BaseChatModel
 from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelResponse, PrimitiveData, Stream, TextMessage
 
-logger = logging.getLogger(__name__)
 QueryParams = Mapping[str, Union[PrimitiveData, Sequence[PrimitiveData]]]
 Headers = Mapping[str, str]
 
@@ -51,7 +49,7 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         timeout: int | None = None,
         retry: bool | RetryStrategy = False,
         proxies: ProxiesTypes | None = None,
-    ):
+    ) -> None:
         super().__init__(parameters=parameters)
         self.timeout = timeout or 60
         if isinstance(retry, RetryStrategy):
@@ -80,11 +78,9 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         with httpx.Client(proxies=self.proxies) as client:
             http_parameters = self._get_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
-            logger.info(f'HTTP Request: {http_parameters}')
             http_response = client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_response = http_response.json()
-        logger.info(f'HTTP Response: {model_response}')
         new_messages = self._parse_reponse(model_response)
         reply = new_messages[-1]['content']
         reply = reply if isinstance(reply, str) else ''
@@ -100,11 +96,9 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         async with httpx.AsyncClient(proxies=self.proxies) as client:
             http_parameters = self._get_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
-            logger.info(f'Async HTTP Request: {http_parameters}')
             http_response = await client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_response = http_response.json()
-        logger.info(f'Async HTTP Response: {model_response}')
         new_messages = self._parse_reponse(model_response)
         reply = new_messages[-1]['content']
         reply = reply if isinstance(reply, str) else ''
@@ -123,8 +117,7 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
 
         wait = wait_random_exponential(min=self.retry_strategy.min_wait_seconds, max=self.retry_strategy.max_wait_seconds)
         stop = stop_after_attempt(self.retry_strategy.max_attempt)
-        output = retry(wait=wait, stop=stop)(self._chat_completion_without_retry)(messages, parameters)
-        return output
+        return retry(wait=wait, stop=stop)(self._chat_completion_without_retry)(messages, parameters)
 
     @override
     async def _async_chat_completion(self, messages: Messages, parameters: T_P) -> ChatModelOutput[T_P]:
@@ -133,8 +126,7 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
 
         wait = wait_random_exponential(min=self.retry_strategy.min_wait_seconds, max=self.retry_strategy.max_wait_seconds)
         stop = stop_after_attempt(self.retry_strategy.max_attempt)
-        output = await retry(wait=wait, stop=stop)(self._async_chat_completion_without_retry)(messages, parameters)
-        return output
+        return await retry(wait=wait, stop=stop)(self._async_chat_completion_without_retry)(messages, parameters)
 
     @override
     def _stream_chat_completion(self, messages: Messages, parameters: T_P) -> Generator[ChatModelStreamOutput[T_P], None, None]:
@@ -154,7 +146,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
             try:
                 stream = self._parse_stream_response(stream_response)
             except BaseException as e:
-                logger.error(f'Parse stream response failed: {stream_response}')
                 raise UnexpectedResponseError(stream_response) from e
 
             if not start:
@@ -195,7 +186,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         with httpx.Client(proxies=self.proxies) as client:
             http_parameters = self._get_stream_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
-            logger.info(f'HTTP Request: {http_parameters}')
             with connect_sse(client=client, method='POST', **http_parameters) as event_source:
                 for sse in event_source.iter_sse():
                     yield sse.data
@@ -203,10 +193,9 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
     def _generate_data_from_basic_stream(self, messages: Messages, parameters: T_P) -> Generator[str, None, None]:
         http_parameters = self._get_stream_request_parameters(messages, parameters)
         http_parameters.update({'timeout': self.timeout})
-        with httpx.Client(proxies=self.proxies) as client:
-            with client.stream('POST', **http_parameters) as source:
-                for line in source.iter_lines():
-                    yield line
+        with httpx.Client(proxies=self.proxies) as client, client.stream('POST', **http_parameters) as source:
+            for line in source.iter_lines():
+                yield line
 
     @override
     async def _async_stream_chat_completion(
@@ -258,7 +247,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         async with httpx.AsyncClient(proxies=self.proxies) as client:
             http_parameters = self._get_stream_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
-            logger.info(f'HTTP Request: {http_parameters}')
             async with aconnect_sse(client=client, method='POST', **http_parameters) as event_source:
                 async for sse in event_source.aiter_sse():
                     yield sse.data
@@ -266,7 +254,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
     async def _async_generate_data_from_basic_stream(self, messages: Messages, parameters: T_P) -> AsyncGenerator[str, None]:
         http_parameters = self._get_stream_request_parameters(messages, parameters)
         http_parameters.update({'timeout': self.timeout})
-        async with httpx.AsyncClient(proxies=self.proxies) as client:
-            async with client.stream('POST', **http_parameters) as source:
-                async for line in source.aiter_lines():
-                    yield line
+        async with httpx.AsyncClient(proxies=self.proxies) as client, client.stream('POST', **http_parameters) as source:
+            async for line in source.aiter_lines():
+                yield line
