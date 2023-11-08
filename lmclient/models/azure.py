@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar
 
-from typing_extensions import Unpack, override
+from typing_extensions import Self, Unpack, override
 
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.models.openai import (
@@ -26,7 +26,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         api_version: str | None = None,
         parameters: OpenAIChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.model = model or os.environ['AZURE_CHAT_API_ENGINE'] or os.environ['AZURE_CHAT_MODEL_NAME']
@@ -36,7 +36,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         self.api_version = api_version or os.getenv('AZURE_API_VERSION')
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
         openai_messages = [convert_to_openai_message(message) for message in messages]
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
@@ -56,17 +56,17 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         raise NotImplementedError('Azure does not support streaming')
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
 
     @property
@@ -76,5 +76,5 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

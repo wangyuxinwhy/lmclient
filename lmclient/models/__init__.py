@@ -5,6 +5,7 @@ from typing import Any, Type
 from lmclient.models.azure import AzureChat
 from lmclient.models.baichuan import BaichuanChat, BaichuanChatParameters
 from lmclient.models.base import BaseChatModel, ModelParameters, OverrideParameters
+from lmclient.models.http import HttpChatModel, HttpChatModelKwargs
 from lmclient.models.hunyuan import HunyuanChat, HunyuanChatParameters
 from lmclient.models.minimax import MinimaxChat, MinimaxChatParameters
 from lmclient.models.minimax_pro import MinimaxProChat, MinimaxProChatParameters
@@ -25,7 +26,7 @@ ModelRegistry: dict[str, tuple[Type[BaseChatModel], Type[ModelParameters]]] = {
 }
 
 
-def load_from_model_id(model_id: str, **kwargs: Any):
+def load_from_model_id(model_id: str, **kwargs: Any) -> BaseChatModel:
     if '/' not in model_id:
         model_type = model_id
         return ModelRegistry[model_type][0](**kwargs)  # type: ignore
@@ -34,14 +35,15 @@ def load_from_model_id(model_id: str, **kwargs: Any):
     return model_cls.from_name(name, **kwargs)
 
 
-def list_chat_model_types():
+def list_chat_model_types() -> list[str]:
     return list(ModelRegistry.keys())
 
 
 __all__ = [
-    'OverrideParameters',
-    'AzureChat',
     'BaseChatModel',
+    'HttpChatModel',
+    'HttpChatModelKwargs',
+    'AzureChat',
     'MinimaxProChat',
     'MinimaxProChatParameters',
     'MinimaxChat',
@@ -58,4 +60,5 @@ __all__ = [
     'HunyuanChatParameters',
     'BaichuanChat',
     'BaichuanChatParameters',
+    'OverrideParameters',
 ]

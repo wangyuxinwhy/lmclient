@@ -10,13 +10,13 @@ chat_models = {
     'minimax': MinimaxProChat(),
     'zhipu': ZhiPuChat(),
 }
-engines = {model_name: ChatEngine(chat_model=chat_model) for model_name, chat_model in chat_models.items()}   # type: ignore
+engines = {model_name: ChatEngine(chat_model=chat_model) for model_name, chat_model in chat_models.items()}  # type: ignore
 
 
-async def multimodel_chat(user_input: str):
+async def multimodel_chat(user_input: str) -> None:
     reply_list = await asyncio.gather(*[engine.async_chat(user_input) for engine in engines.values()])
     for model_name, reply in zip(engines.keys(), reply_list):
-        print(f'{model_name}: {reply}')
+        print(f'{model_name}: {reply}')  # noqa: T201
 
 
 if __name__ == '__main__':

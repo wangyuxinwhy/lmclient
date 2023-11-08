@@ -34,6 +34,15 @@ class CompletionEngineKwargs(TypedDict):
 
 
 class CompletionEngine(Generic[T_P]):
+    """
+    Args:
+        chat_model (BaseChatModel[T_P]): The chat model to use for generating completions.
+        async_capacity (int, optional): The maximum number of asynchronous requests that can be made at once. Defaults to 3.
+        max_requests_per_minute (int, optional): The maximum number of requests that can be made per minute. Defaults to 20.
+        error_mode (ErrorMode, optional): The error handling mode. Defaults to 'raise'.
+        progress_bar_mode (ProgressBarMode, optional): The progress bar mode. Defaults to 'auto'.
+    """
+
     NUM_SECONDS_PER_MINUTE: ClassVar[int] = 60
     PROGRESS_BAR_THRESHOLD: ClassVar[int] = 20
 
@@ -44,7 +53,7 @@ class CompletionEngine(Generic[T_P]):
         max_requests_per_minute: int = 20,
         error_mode: ErrorMode = 'raise',
         progress_bar_mode: ProgressBarMode = 'auto',
-    ):
+    ) -> None:
         self.chat_model = chat_model
         self.async_capacity = async_capacity
         self.max_requests_per_minute = max_requests_per_minute
@@ -69,7 +78,11 @@ class CompletionEngine(Generic[T_P]):
         progress_bar.close()
 
     def _run_single_task(
-        self, prompt: Prompt, progress_bar: tqdm.tqdm[NoReturn], override_parameters: OverrideParameters[T_P] = None, **kwargs
+        self,
+        prompt: Prompt,
+        progress_bar: tqdm.tqdm[NoReturn],
+        override_parameters: OverrideParameters[T_P] = None,
+        **kwargs: Any,
     ) -> ChatModelOutput:
         messages = ensure_messages(prompt)
         sleep_time = self._calculate_sleep_time()
@@ -79,23 +92,23 @@ class CompletionEngine(Generic[T_P]):
 
         try:
             output = self.chat_model.chat_completion(prompt=messages, override_parameters=override_parameters, **kwargs)
-            progress_bar.update(1)
-            return output
         except BaseException as e:
             if self.error_mode == 'raise':
                 raise
-            elif self.error_mode == 'ignore':
+            if self.error_mode == 'ignore':
                 return ChatModelOutput(
                     model_id=self.chat_model.model_id,
                     parameters=self.chat_model.parameters,
                     messages=messages,
                     error=str(e),
                 )
-            else:
-                raise ValueError(f'Unknown error mode: {self.error_mode}') from e
+            raise ValueError(f'Unknown error mode: {self.error_mode}') from e
+        else:
+            progress_bar.update(1)
+            return output
 
     async def async_run(
-        self, prompts: Prompts, override_parameters: OverrideParameters[T_P] = None, **kwargs
+        self, prompts: Prompts, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
     ) -> AsyncGenerator[ChatModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
@@ -142,22 +155,23 @@ class CompletionEngine(Generic[T_P]):
                 output = await self.chat_model.async_chat_completion(
                     messages, override_parameters=override_parameters, **kwargs
                 )
-                progress_bar.update(1)
-                return output
             except BaseException as e:
                 if self.error_mode == 'raise':
                     raise
-                elif self.error_mode == 'ignore':
+                if self.error_mode == 'ignore':
                     return ChatModelOutput(
                         model_id=self.chat_model.model_id,
                         parameters=self.chat_model.parameters,
                         messages=messages,
                         error=str(e),
                     )
-                else:
-                    raise ValueError(f'Unknown error mode: {self.error_mode}') from e
 
-    def _calculate_sleep_time(self):
+                raise ValueError(f'Unknown error mode: {self.error_mode}') from e
+            else:
+                progress_bar.update(1)
+                return output
+
+    def _calculate_sleep_time(self) -> int:
         idx = 0
         current_time = time.time()
         for i, task_created_time in enumerate(self._task_created_time_list):
@@ -168,12 +182,11 @@ class CompletionEngine(Generic[T_P]):
 
         if len(self._task_created_time_list) < self.max_requests_per_minute:
             return 0
-        else:
-            return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
+
+        return max(self.NUM_SECONDS_PER_MINUTE - int(current_time - self._task_created_time_list[0]) + 1, 0)
 
     def _get_progress_bar(self, num_tasks: int) -> tqdm.tqdm[NoReturn]:
         use_progress_bar = (self.progress_bar_mode == 'always') or (
             self.progress_bar_mode == 'auto' and num_tasks > self.PROGRESS_BAR_THRESHOLD
         )
-        progress_bar = tqdm.tqdm(desc=f'{self.chat_model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar)
-        return progress_bar
+        return tqdm.tqdm(desc=f'{self.chat_model.__class__.__name__}', total=num_tasks, disable=not use_progress_bar)

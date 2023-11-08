@@ -4,7 +4,7 @@ import os
 from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import Field, PositiveInt, field_validator
-from typing_extensions import Annotated, TypedDict, Unpack, override
+from typing_extensions import Annotated, Self, TypedDict, Unpack, override
 
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
@@ -43,7 +43,7 @@ class MinimaxChatParameters(ModelParameters):
 
     @field_validator('temperature', 'top_p', mode='after')
     @classmethod
-    def zero_is_not_valid(cls, value):
+    def zero_is_not_valid(cls, value: float) -> float:
         if value == 0:
             return 0.01
         return value
@@ -53,7 +53,7 @@ def convert_to_minimax_message(message: Message) -> MinimaxMessage:
     if not is_text_message(message):
         raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
     role = message['role']
-    if role != 'assistant' and role != 'user':
+    if role not in ('assistant', 'user'):
         raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
     if role == 'assistant':
@@ -61,11 +61,11 @@ def convert_to_minimax_message(message: Message) -> MinimaxMessage:
             'sender_type': 'BOT',
             'text': message['content'],
         }
-    else:
-        return {
-            'sender_type': 'USER',
-            'text': message['content'],
-        }
+
+    return {
+        'sender_type': 'USER',
+        'text': message['content'],
+    }
 
 
 class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
@@ -81,7 +81,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         system_prompt: str | None = None,
         parameters: MinimaxChatParameters | None = None,
         **kwagrs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or MinimaxChatParameters()
         if system_prompt is not None:
             parameters.prompt = system_prompt
@@ -93,7 +93,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         self.api_base = api_base or self.default_api_base
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
         minimax_messages = [convert_to_minimax_message(message) for message in messages]
         parameters_dict = parameters.model_dump(exclude_none=True, by_alias=True)
         if 'temperature' in parameters_dict:
@@ -115,21 +115,21 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         try:
             return [TextMessage(role='assistant', content=response['choices'][0]['text'])]
         except (KeyError, IndexError, TypeError) as e:
             raise UnexpectedResponseError(response) from e
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: MinimaxChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         http_parameters['json']['use_standard_sse'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         delta = response['choices'][0]['delta']
         if response['reply']:
             return Stream(delta=delta, control='finish')
@@ -142,5 +142,5 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

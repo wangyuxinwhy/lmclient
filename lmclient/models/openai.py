@@ -79,7 +79,7 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
             },
             'content': None,
         }
-    elif is_text_message(message):
+    if is_text_message(message):
         role = message['role']
         if role == 'function':
             name = message.get('name')
@@ -90,13 +90,13 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
                 'name': name,
                 'content': message['content'],
             }
-        else:
-            return {
-                'role': role,
-                'content': message['content'],
-            }
-    else:
-        raise MessageError(f'invalid message type: {type(message)}')
+
+        return {
+            'role': role,
+            'content': message['content'],
+        }
+
+    raise MessageError(f'invalid message type: {type(message)}')
 
 
 def parse_openai_model_reponse(response: ModelResponse) -> Messages:
@@ -112,14 +112,14 @@ def parse_openai_model_reponse(response: ModelResponse) -> Messages:
                     },
                 )
             ]
-        else:
-            text: str = response['choices'][0]['message']['content']
-            return [
-                TextMessage(
-                    role='assistant',
-                    content=text,
-                )
-            ]
+
+        text: str = response['choices'][0]['message']['content']
+        return [
+            TextMessage(
+                role='assistant',
+                content=text,
+            )
+        ]
     except (KeyError, IndexError) as e:
         raise UnexpectedResponseError(response) from e
 
@@ -137,7 +137,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         system_prompt: str | None = None,
         parameters: OpenAIChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelKwargs],
-    ):
+    ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)
         self.model = model
@@ -146,7 +146,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         self.api_key = api_key or os.environ['OPENAI_API_KEY']
 
     @override
-    def get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+    def _get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
         openai_messages = [convert_to_openai_message(message) for message in messages]
         headers = {
             'Authorization': f'Bearer {self.api_key}',
@@ -166,27 +166,27 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: ModelResponse) -> Messages:
         return parse_openai_model_reponse(response)
 
     @override
-    def get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
-        http_parameters = self.get_request_parameters(messages, parameters)
+    def _get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
+        http_parameters = self._get_request_parameters(messages, parameters)
         http_parameters['json']['stream'] = True
         return http_parameters
 
     @override
-    def parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: ModelResponse) -> Stream:
         if response.get('data') == '[DONE]':
             return Stream(delta='', control='done')
-        else:
-            delta = response['choices'][0]['delta']
-            if 'role' in delta:
-                return Stream(delta='', control='start')
-            elif 'content' in delta:
-                return Stream(delta=delta['content'], control='continue')
-            else:
-                return Stream(delta='', control='finish')
+
+        delta = response['choices'][0]['delta']
+        if 'role' in delta:
+            return Stream(delta='', control='start')
+        if 'content' in delta:
+            return Stream(delta=delta['content'], control='continue')
+
+        return Stream(delta='', control='finish')
 
     @property
     @override
@@ -195,5 +195,5 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
 
     @classmethod
     @override
-    def from_name(cls, name: str, **kwargs: Any):
+    def from_name(cls, name: str, **kwargs: Any) -> Self:
         return cls(model=name, **kwargs)

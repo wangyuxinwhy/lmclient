@@ -72,6 +72,12 @@ class ChatModelOutput(BaseModel, Generic[T_P]):
     def is_error(self) -> bool:
         return self.error is not None
 
+    @property
+    def last_message(self) -> Message:
+        if self.messages:
+            return self.messages[-1]
+        raise ValueError('No messages in output')
+
 
 class Stream(BaseModel):
     delta: str = ''
@@ -94,3 +100,7 @@ Prompts = Sequence[Prompt]
 text_message_validator = TypeAdapter(TextMessage)
 prompt_validator = TypeAdapter(Prompt)
 PrimitiveData = Optional[Union[str, int, float, bool]]
+
+ChatModelOutput.model_rebuild()
+ChatModelStreamOutput.model_rebuild()
+GeneralParameters.model_rebuild()

@@ -80,7 +80,7 @@ class BaseChatModel(Generic[T_P], ABC):
 
     async def async_stream_chat_completion(
         self, prompt: Prompt, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
-    ):
+    ) -> AsyncIterator[ChatModelStreamOutput[T_P]]:
         parameters = self.merge_parameters(override_parameters, **kwargs)
         messages = ensure_messages(prompt)
         async for i in self._async_stream_chat_completion(messages, parameters):

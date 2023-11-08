@@ -33,23 +33,40 @@ select = [
     "I",  # isort
     "C",  # flake8-comprehensions
     "B",  # flake8-bugbear
+    "N",
+    "SIM",
+    "ANN",
+    "A",
+    "T",
+    "PT",
+    "RET",
+    "PL",
+    "TRY",
+    "PERF",
 ]
 ignore = [
     "E501",  # line too long, handled by black
     "B008",  # do not perform function calls in argument defaults
     "B905",  # zip strict
     "C901",  # too complex
+    "ANN1",  # self and cls
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed in
+    "PLR0913", # Too many arguments in function definition
+    "TRY003", # Avoid specifying long messages outside the exception class
 ]
+exclude = ["playground", "api_docs"]
+target-version = "py38"
+
+[tool.ruff.format]
+quote-style = "single"
 
 [tool.pyright]
 reportMissingTypeStubs=false
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
-blue = "^0.9.1"
-isort = "^5.12.0"
 pyright = "^1.1.310"
-ruff = "^0.0.286"
+ruff = "^0.1.4"
 
 [build-system]
 requires = ["poetry-core"]

@@ -17,7 +17,7 @@ def get_weather(city: str, country: Literal['US', 'CN'] = 'US') -> str:
     return f'The weather in {city}, {country} is 72 degrees and sunny'
 
 
-def test_function_decrator():
+def test_function_decrator() -> None:
     wrapped = function(get_weather)
     json_schema = {
         'name': 'get_weather',
