@@ -11,7 +11,6 @@ from typing_extensions import NotRequired, Self, TypedDict, Unpack, override
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import T_P, Message, Messages, ModelParameters, ModelResponse, Probability, Stream, Temperature, TextMessage
-from lmclient.utils import is_text_message
 
 API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
@@ -52,15 +51,15 @@ class ZhiPuMessage(TypedDict):
 
 
 def convert_to_zhipu_message(message: Message) -> ZhiPuMessage:
-    if not is_text_message(message):
+    if not isinstance(message, TextMessage):
         raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
-    role = message['role']
+    role = message.role
     if role not in ('assistant', 'user'):
         raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
     return {
         'role': role,
-        'content': message['content'],
+        'content': message.content,
     }
 
 

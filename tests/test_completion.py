@@ -23,38 +23,36 @@ class TestModel(BaseChatModel[TestModelParameters]):
         super().__init__(default_parameters)
 
     def _chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1]["content"]}'
+        content = f'Completed: {messages[-1].content}'
         return ChatModelOutput(
-            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)]
         )
 
     async def _async_chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
-        content = f'Completed: {messages[-1]["content"]}'
+        content = f'Completed: {messages[-1].content}'
         return ChatModelOutput(
-            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)], reply=content
+            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)]
         )
 
     def _stream_chat_completion(
         self, messages: Messages, parameters: TestModelParameters
     ) -> Iterator[ChatModelStreamOutput[TestModelParameters]]:
-        content = f'Completed: {messages[-1]["content"]}'
+        content = f'Completed: {messages[-1].content}'
         yield ChatModelStreamOutput(
             model_id='test',
             parameters=parameters,
             messages=[TextMessage(role='assistant', content=content)],
-            reply=content,
             stream=Stream(delta=content, control='finish'),
         )
 
     async def _async_stream_chat_completion(
         self, messages: Messages, parameters: TestModelParameters
     ) -> AsyncIterator[ChatModelStreamOutput[TestModelParameters]]:
-        content = f'Completed: {messages[-1]["content"]}'
+        content = f'Completed: {messages[-1].content}'
         yield ChatModelStreamOutput(
             model_id='test',
             parameters=parameters,
             messages=[TextMessage(role='assistant', content=content)],
-            reply=content,
             stream=Stream(delta=content, control='finish'),
         )
 
@@ -92,7 +90,7 @@ def test_async_completion() -> None:
     CompletionEngine.NUM_SECONDS_PER_MINUTE = 2
 
     start_time = time.perf_counter()
-    messages: list[TextMessage] = [{'role': 'user', 'content': 'hello, who are you?'}]
+    messages = [{'role': 'user', 'content': 'hello, who are you?'}]
     prompts = ['Hello, my name is', 'I am a student', messages] * 4
     results = asyncio.run(async_helper(client, prompts))
     elapsed_time = time.perf_counter() - start_time

@@ -12,19 +12,25 @@ T_P = TypeVar('T_P', bound='ModelParameters')
 T_O = TypeVar('T_O', bound='ChatModelOutput')
 
 
-class TextMessage(TypedDict):
+class TextMessage(BaseModel):
     role: Literal['user', 'assistant', 'function', 'system']
-    name: NotRequired[str]
+    name: Optional[str] = None
     content: str
 
 
-class FunctionCallMessage(TypedDict):
+class FunctionCall(BaseModel):
+    name: str
+    arguments: str
+    thoughts: Optional[str] = None
+
+
+class FunctionCallMessage(BaseModel):
     role: Literal['assistant']
-    name: NotRequired[str]
+    name: Optional[str] = None
     content: FunctionCall
 
 
-class Function(TypedDict):
+class FunctionJsonSchema(TypedDict):
     name: str
     parameters: JsonSchema
     description: NotRequired[str]
@@ -32,17 +38,11 @@ class Function(TypedDict):
     examples: NotRequired['Messages']
 
 
-class FunctionCall(TypedDict):
-    name: str
-    arguments: str
-    thoughts: NotRequired[str]
-
-
 class GeneralParameters(BaseModel):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     max_tokens: Optional[PositiveInt] = None
-    functions: Optional[List[Function]] = None
+    functions: Optional[List[FunctionJsonSchema]] = None
 
 
 class ModelParameters(BaseModel):
@@ -64,7 +64,6 @@ class ChatModelOutput(BaseModel, Generic[T_P]):
     model_id: str
     parameters: SerializeAsAny[T_P]
     messages: 'Messages'
-    reply: str = ''
     error: Optional[str] = None
     extra_info: Dict[str, Any] = {}
 
@@ -73,10 +72,16 @@ class ChatModelOutput(BaseModel, Generic[T_P]):
         return self.error is not None
 
     @property
-    def last_message(self) -> Message:
+    def last_message(self) -> Message | None:
         if self.messages:
             return self.messages[-1]
-        raise ValueError('No messages in output')
+        return None
+
+    @property
+    def reply(self) -> str:
+        if self.last_message and isinstance(self.last_message, TextMessage):
+            return self.last_message.content
+        return ''
 
 
 class Stream(BaseModel):
@@ -95,9 +100,12 @@ class ChatModelStreamOutput(ChatModelOutput[T_P]):
 ModelResponse = Dict[str, Any]
 Message = Union[TextMessage, FunctionCallMessage]
 Messages = Sequence[Message]
-Prompt = Union[str, TextMessage, Messages]
+MessageTypes = (TextMessage, FunctionCallMessage)
+MessageDict = Dict[str, Any]
+MessageDicts = Sequence[MessageDict]
+Prompt = Union[str, Message, Messages, MessageDict, MessageDicts]
 Prompts = Sequence[Prompt]
-text_message_validator = TypeAdapter(TextMessage)
+message_validator = TypeAdapter(Message)
 prompt_validator = TypeAdapter(Prompt)
 PrimitiveData = Optional[Union[str, int, float, bool]]
 

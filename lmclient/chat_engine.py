@@ -11,12 +11,12 @@ from lmclient.printer import Printer, SimplePrinter
 from lmclient.types import (
     ChatModelOutput,
     FunctionCall,
+    FunctionCallMessage,
     GeneralParameters,
     Message,
     ModelParameters,
     TextMessage,
 )
-from lmclient.utils import is_function_call_message, is_text_message
 
 T_P = TypeVar('T_P', bound=ModelParameters)
 
@@ -118,11 +118,11 @@ class ChatEngine(Generic[T_P]):
             model_output = self._chat_model.chat_completion(self.history, override_parameters=override_parameters, **kwargs)
         self.handle_model_output(model_output)
 
-        if is_text_message(model_output.last_message):
-            return model_output.last_message['content']
+        if isinstance(model_output.last_message, TextMessage):
+            return model_output.last_message.content
 
-        if is_function_call_message(model_output.last_message):
-            function_call = model_output.last_message['content']
+        if isinstance(model_output.last_message, FunctionCallMessage):
+            function_call = model_output.last_message.content
             return self._recursive_function_call(function_call, override_parameters, **kwargs)
 
         raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
@@ -159,11 +159,11 @@ class ChatEngine(Generic[T_P]):
             )
         self.handle_model_output(model_output)
 
-        if is_text_message(model_output.last_message):
-            return model_output.last_message['content']
+        if isinstance(model_output.last_message, TextMessage):
+            return model_output.last_message.content
 
-        if is_function_call_message(model_output.last_message):
-            function_call = model_output.last_message['content']
+        if isinstance(model_output.last_message, FunctionCallMessage):
+            function_call = model_output.last_message.content
             return await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
 
         raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
@@ -181,15 +181,15 @@ class ChatEngine(Generic[T_P]):
         return None
 
     def run_function_call(self, function_call: FunctionCall) -> Any | str:
-        function = self._function_map.get(function_call['name'])
+        function = self._function_map.get(function_call.name)
         if function is None:
             if self.function_call_raise_error:
-                raise ValueError(f'Function {function_call["name"]} not found')
+                raise ValueError(f'Function {function_call.name} not found')
 
             return 'Function not found, please try another function.'
 
         try:
-            arguments = json.loads(function_call['arguments'], strict=False)
+            arguments = json.loads(function_call.arguments, strict=False)
             return function(**arguments)
         except Exception as e:
             if self.function_call_raise_error:
@@ -202,7 +202,7 @@ class ChatEngine(Generic[T_P]):
     ) -> str:
         function_output = self.run_function_call(function_call)
         function_message = TextMessage(
-            role='function', name=function_call['name'], content=json.dumps(function_output, ensure_ascii=False)
+            role='function', name=function_call.name, content=json.dumps(function_output, ensure_ascii=False)
         )
         self.history.append(function_message)
         if self.printer:
@@ -211,14 +211,14 @@ class ChatEngine(Generic[T_P]):
         model_output = self._chat_model.chat_completion(self.history, override_parameters=override_parameters, **kwargs)
         self.handle_model_output(model_output)
 
-        if is_text_message(model_output.last_message):
-            return model_output.last_message['content']
+        if isinstance(model_output.last_message, TextMessage):
+            return model_output.last_message.content
 
-        if is_function_call_message(model_output.last_message):
+        if isinstance(model_output.last_message, FunctionCallMessage):
             self._function_call_count += 1
             if self._function_call_count > self.max_function_calls_per_turn:
                 raise RuntimeError('Maximum number of function calls reached.')
-            function_call = model_output.last_message['content']
+            function_call = model_output.last_message.content
             return self._recursive_function_call(function_call, override_parameters, **kwargs)
 
         raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
@@ -228,7 +228,7 @@ class ChatEngine(Generic[T_P]):
     ) -> str:
         function_output = self.run_function_call(function_call)
         function_message = TextMessage(
-            role='function', name=function_call['name'], content=json.dumps(function_output, ensure_ascii=False)
+            role='function', name=function_call.name, content=json.dumps(function_output, ensure_ascii=False)
         )
         self.history.append(function_message)
         if self.printer:
@@ -237,14 +237,14 @@ class ChatEngine(Generic[T_P]):
         model_output = await self._chat_model.async_chat_completion(self.history, override_parameters, **kwargs)
         self.handle_model_output(model_output)
 
-        if is_text_message(model_output.last_message):
-            return model_output.last_message['content']
+        if isinstance(model_output.last_message, TextMessage):
+            return model_output.last_message.content
 
-        if is_function_call_message(model_output.last_message):
+        if isinstance(model_output.last_message, FunctionCallMessage):
             self._function_call_count += 1
             if self._function_call_count > self.max_function_calls_per_turn:
                 raise RuntimeError('Maximum number of function calls reached.')
-            function_call = model_output.last_message['content']
+            function_call = model_output.last_message.content
             return await self._async_recursive_function_call(function_call, override_parameters, **kwargs)
 
         raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
@@ -254,7 +254,7 @@ class ChatEngine(Generic[T_P]):
         self.history.extend(model_output.messages)
         if self.printer:
             for message in model_output.messages:
-                if self.stream and message['role'] == 'assistant':
+                if self.stream and message.role == 'assistant':
                     continue
                 self.printer.print_message(message)
 

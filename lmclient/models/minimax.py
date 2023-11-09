@@ -18,7 +18,6 @@ from lmclient.types import (
     Temperature,
     TextMessage,
 )
-from lmclient.utils import is_text_message
 
 
 class MinimaxMessage(TypedDict):
@@ -50,21 +49,21 @@ class MinimaxChatParameters(ModelParameters):
 
 
 def convert_to_minimax_message(message: Message) -> MinimaxMessage:
-    if not is_text_message(message):
+    if not isinstance(message, TextMessage):
         raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
-    role = message['role']
-    if role not in ('assistant', 'user'):
-        raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
-    if role == 'assistant':
+    if message.role not in ('assistant', 'user'):
+        raise MessageError(f'invalid message role: {message.role}, only "user" and "assistant" are allowed')
+
+    if message.role == 'assistant':
         return {
             'sender_type': 'BOT',
-            'text': message['content'],
+            'text': message.content,
         }
 
     return {
         'sender_type': 'USER',
-        'text': message['content'],
+        'text': message.content,
     }
 
 

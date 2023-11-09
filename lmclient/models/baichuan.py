@@ -21,7 +21,6 @@ from lmclient.types import (
     Temperature,
     TextMessage,
 )
-from lmclient.utils import is_text_message
 
 
 class BaichuanMessage(TypedDict):
@@ -105,15 +104,15 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
 
     @staticmethod
     def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
-        if not is_text_message(message):
+        if not isinstance(message, TextMessage):
             raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
-        role = message['role']
+        role = message.role
         if role not in ('assistant', 'user'):
             raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
 
         return {
             'role': role,
-            'content': message['content'],
+            'content': message.content,
         }
 
     @staticmethod

@@ -12,6 +12,7 @@ from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, o
 from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
+    FunctionCall,
     FunctionCallMessage,
     GeneralParameters,
     JsonSchema,
@@ -24,7 +25,6 @@ from lmclient.types import (
     Temperature,
     TextMessage,
 )
-from lmclient.utils import is_function_call_message, is_text_message
 
 
 class WenxinMessage(TypedDict):
@@ -49,34 +49,32 @@ class WenxinFunction(TypedDict):
 
 
 def convert_to_wenxin_message(message: Message) -> WenxinMessage:
-    role = message['role']
+    if message.role == 'system':
+        raise MessageError(f'Invalid message role: {message.role}, only "user", "assistant" and "function" are allowed')
 
-    if role == 'system':
-        raise MessageError(f'Invalid message role: {role}, only "user", "assistant" and "function" are allowed')
-
-    if is_function_call_message(message):
+    if isinstance(message, FunctionCallMessage):
         return {
             'role': 'assistant',
             'function_call': {
-                'name': message['content']['name'],
-                'arguments': message['content']['arguments'],
-                'thoughts': message['content'].get('thoughts', ''),
+                'name': message.content.name,
+                'arguments': message.content.arguments,
+                'thoughts': message.content.thoughts or '',
             },
             'content': '',
         }
-    if is_text_message(message):
-        if role == 'function':
-            if (name := message.get('name')) is None:
+    if isinstance(message, TextMessage):
+        if message.role == 'function':
+            if message.name is None:
                 raise MessageError(f'Function name is required, message: {message}')
             return {
-                'role': role,
-                'name': name,
-                'content': message['content'],
+                'role': message.role,
+                'name': message.name,
+                'content': message.content,
             }
 
         return {
-            'role': role,
-            'content': message['content'],
+            'role': message.role,
+            'content': message.content,
         }
     raise MessageError(f'Invalid message type: {type(message)}')
 
@@ -225,11 +223,11 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
             return [
                 FunctionCallMessage(
                     role='assistant',
-                    content={
-                        'name': response['function_call']['name'],
-                        'arguments': response['function_call']['arguments'],
-                        'thoughts': response['function_call']['thoughts'],
-                    },
+                    content=FunctionCall(
+                        name=response['function_call']['name'],
+                        arguments=response['function_call']['arguments'],
+                        thoughts=response['function_call']['thoughts'],
+                    ),
                 )
             ]
 

@@ -81,15 +81,12 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
             http_response = client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_response = http_response.json()
-        new_messages = self._parse_reponse(model_response)
-        reply = new_messages[-1]['content']
-        reply = reply if isinstance(reply, str) else ''
+        response_messages = self._parse_reponse(model_response)
         return ChatModelOutput[T_P](
             model_id=self.model_id,
             parameters=parameters.model_copy(),
-            messages=new_messages,
+            messages=response_messages,
             extra_info={'http_response': model_response},
-            reply=reply,
         )
 
     async def _async_chat_completion_without_retry(self, messages: Messages, parameters: T_P) -> ChatModelOutput[T_P]:
@@ -100,14 +97,11 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
         http_response.raise_for_status()
         model_response = http_response.json()
         new_messages = self._parse_reponse(model_response)
-        reply = new_messages[-1]['content']
-        reply = reply if isinstance(reply, str) else ''
         return ChatModelOutput[T_P](
             model_id=self.model_id,
             parameters=parameters.model_copy(),
             messages=new_messages,
             extra_info={'http_response': model_response},
-            reply=reply,
         )
 
     @override
@@ -159,7 +153,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
                 model_id=self.model_id,
                 parameters=parameters.model_copy(deep=True),
                 messages=[TextMessage(role='assistant', content=reply)],
-                reply=reply,
                 extra_info={'http_response': stream_response},
                 stream=stream,
             )
@@ -170,7 +163,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
                 model_id=self.model_id,
                 parameters=parameters.model_copy(deep=True),
                 messages=[TextMessage(role='assistant', content=reply)],
-                reply=reply,
                 extra_info={'http_response': stream_response},
                 stream=stream,
             )
@@ -228,7 +220,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
                 model_id=self.model_id,
                 parameters=parameters.model_copy(deep=True),
                 messages=[TextMessage(role='assistant', content=reply)],
-                reply=reply,
                 extra_info={'http_response': stream_response},
                 stream=stream,
             )
@@ -239,7 +230,6 @@ class HttpChatModel(BaseChatModel[T_P], ABC):
                 model_id=self.model_id,
                 parameters=parameters.model_copy(deep=True),
                 messages=[TextMessage(role='assistant', content=reply)],
-                reply=reply,
                 stream=stream,
             )
 

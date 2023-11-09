@@ -9,6 +9,7 @@ from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, o
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
+    FunctionCall,
     FunctionCallMessage,
     GeneralParameters,
     JsonSchema,
@@ -21,7 +22,6 @@ from lmclient.types import (
     Temperature,
     TextMessage,
 )
-from lmclient.utils import is_function_call_message, is_text_message
 
 
 class FunctionCallName(TypedDict):
@@ -70,30 +70,29 @@ class OpenAIChatParameters(ModelParameters):
 
 
 def convert_to_openai_message(message: Message) -> OpenAIMessage:
-    if is_function_call_message(message):
+    if isinstance(message, FunctionCallMessage):
         return {
             'role': 'assistant',
             'function_call': {
-                'name': message['content']['name'],
-                'arguments': message['content']['arguments'],
+                'name': message.content.name,
+                'arguments': message.content.arguments,
             },
             'content': None,
         }
-    if is_text_message(message):
-        role = message['role']
+    if isinstance(message, TextMessage):
+        role = message.role
         if role == 'function':
-            name = message.get('name')
-            if (name := message.get('name')) is None:
+            if message.name is None:
                 raise MessageError(f'function name is required, message: {message}')
             return {
                 'role': role,
-                'name': name,
-                'content': message['content'],
+                'name': message.name,
+                'content': message.content,
             }
 
         return {
             'role': role,
-            'content': message['content'],
+            'content': message.content,
         }
 
     raise MessageError(f'invalid message type: {type(message)}')
@@ -106,10 +105,10 @@ def parse_openai_model_reponse(response: ModelResponse) -> Messages:
             return [
                 FunctionCallMessage(
                     role='assistant',
-                    content={
-                        'name': function_call['name'],
-                        'arguments': function_call['arguments'],
-                    },
+                    content=FunctionCall(
+                        name=function_call['name'],
+                        arguments=function_call['arguments'],
+                    ),
                 )
             ]
 

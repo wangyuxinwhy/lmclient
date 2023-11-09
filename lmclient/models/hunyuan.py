@@ -14,7 +14,6 @@ from typing_extensions import Self, TypedDict, Unpack, override
 from lmclient.exceptions import UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs, ModelResponse, Stream
 from lmclient.types import Message, Messages, ModelParameters, Probability, Temperature, TextMessage
-from lmclient.utils import is_text_message
 
 
 class HunyuanMessage(TypedDict):
@@ -28,15 +27,13 @@ class HunyuanChatParameters(ModelParameters):
 
 
 def convert_to_hunyuan_message(message: Message) -> HunyuanMessage:
-    if not is_text_message(message):
+    if not isinstance(message, TextMessage):
         raise MessageError(f'Invalid message type: {type(message)}, only TextMessage is allowed')
-    role = message['role']
-    if role not in ('assistant', 'user'):
-        raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
-
+    if message.role not in ('assistant', 'user'):
+        raise MessageError(f'Invalid message role: {message.role}, only "user" and "assistant" are allowed')
     return {
-        'role': role,
-        'content': message['content'],
+        'role': message.role,
+        'content': message.content,
     }
 
 

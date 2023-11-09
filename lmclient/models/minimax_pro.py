@@ -9,8 +9,9 @@ from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, o
 from lmclient.exceptions import MessageError, UnexpectedResponseError
 from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
 from lmclient.types import (
-    Function,
+    FunctionCall,
     FunctionCallMessage,
+    FunctionJsonSchema,
     Message,
     Messages,
     ModelParameters,
@@ -20,7 +21,6 @@ from lmclient.types import (
     Temperature,
     TextMessage,
 )
-from lmclient.utils import is_function_call_message, is_text_message
 
 
 class BotSettingDict(TypedDict):
@@ -65,7 +65,7 @@ class MinimaxProChatParameters(ModelParameters):
     max_tokens: Annotated[Optional[PositiveInt], Field(serialization_alias='tokens_to_generate')] = None
     mask_sensitive_info: Optional[bool] = None
     sample_messages: Optional[List[MinimaxProMessage]] = None
-    functions: Optional[List[Function]] = None
+    functions: Optional[List[FunctionJsonSchema]] = None
     plugins: Optional[List[str]] = None
 
     @model_validator(mode='after')
@@ -105,8 +105,8 @@ class MinimaxProChatParameters(ModelParameters):
 def convert_to_minimax_pro_message(
     message: Message, default_bot_name: str | None = None, default_user_name: str = '用户'
 ) -> MinimaxProMessage:
-    if is_function_call_message(message):
-        sender_name = message.get('name') or default_bot_name
+    if isinstance(message, FunctionCallMessage):
+        sender_name = message.name or default_bot_name
         if sender_name is None:
             raise MessageError(f'bot name is required for function call, message: {message}')
         return {
@@ -114,33 +114,32 @@ def convert_to_minimax_pro_message(
             'sender_name': sender_name,
             'text': '',
             'function_call': {
-                'name': message['content']['name'],
-                'arguments': message['content']['arguments'],
+                'name': message.content.name,
+                'arguments': message.content.arguments,
             },
         }
-    if is_text_message(message):
-        if message['role'] == 'assistant':
-            sender_name = message.get('name') or default_bot_name
+    if isinstance(message, TextMessage):
+        if message.role == 'assistant':
+            sender_name = message.name or default_bot_name
             if sender_name is None:
                 raise MessageError(f'bot name is required, message: {message}')
             return {
                 'sender_type': 'BOT',
                 'sender_name': sender_name,
-                'text': message['content'],
+                'text': message.content,
             }
-        if message['role'] == 'function':
-            name = message.get('name')
-            if name is None:
+        if message.role == 'function':
+            if message.name is None:
                 raise MessageError(f'function name is required, message: {message}')
             return {
                 'sender_type': 'FUNCTION',
-                'sender_name': name,
-                'text': message['content'],
+                'sender_name': message.name,
+                'text': message.content,
             }
-        if message['role'] == 'user':
-            sender_name = message.get('name') or default_user_name
-            return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message['content']}
-        raise MessageError(f'invalid message role: {message["role"]}')
+        if message.role == 'user':
+            sender_name = message.name or default_user_name
+            return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message.content}
+        raise MessageError(f'invalid message role: {message.role}')
     raise MessageError(f'invalid role {message["role"]}, must be one of "user", "assistant", "function"')
 
 
@@ -226,7 +225,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
             return FunctionCallMessage(
                 role='assistant',
                 name=message['sender_name'],
-                content={'name': message['function_call']['name'], 'arguments': message['function_call']['arguments']},
+                content=FunctionCall(name=message['function_call']['name'], arguments=message['function_call']['arguments']),
             )
 
         return TextMessage(
