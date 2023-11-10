@@ -7,8 +7,8 @@ from docstring_parser import parse
 from pydantic import TypeAdapter, validate_call
 from typing_extensions import ParamSpec
 
-from lmclient.types import Function, Message
-from lmclient.utils import is_function_call_message
+from lmclient.message import FunctionCallMessage, Message
+from lmclient.types import FunctionJsonSchema
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -43,7 +43,7 @@ class function(Generic[P, T]):  # noqa: N801
         parameters['required'] = sorted(k for k, v in parameters['properties'].items() if 'default' not in v)
         recusive_remove(parameters, 'additionalProperties')
         recusive_remove(parameters, 'title')
-        self.json_schema: Function = {
+        self.json_schema: FunctionJsonSchema = {
             'name': self.name,
             'description': self.docstring.short_description or '',
             'parameters': parameters,
@@ -53,9 +53,9 @@ class function(Generic[P, T]):  # noqa: N801
         return self.function(*args, **kwargs)
 
     def call_with_message(self, message: Message) -> T:
-        if is_function_call_message(message):
-            function_call = message['content']
-            arguments = json.loads(function_call['arguments'], strict=False)
+        if isinstance(message, FunctionCallMessage):
+            function_call = message.content
+            arguments = json.loads(function_call.arguments, strict=False)
             return self.function(**arguments)  # type: ignore
         raise ValueError(f'message is not a function call: {message}')
 

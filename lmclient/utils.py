@@ -1,29 +1,19 @@
 from __future__ import annotations
 
+from typing import Any
+
 from typing_extensions import TypeGuard
 
-from lmclient.types import (
-    ChatModelOutput,
-    ChatModelStreamOutput,
-    FunctionCallMessage,
-    Message,
-    Messages,
-    Prompt,
-    TextMessage,
-    prompt_validator,
-)
-
-
-def is_function_call_message(message: Message) -> TypeGuard[FunctionCallMessage]:
-    return isinstance(message['content'], dict)
-
-
-def is_text_message(message: Message) -> TypeGuard[TextMessage]:
-    return isinstance(message['content'], str)
+from lmclient.message import Message, Messages, MessageTypes, Prompt, TextMessage, message_validator, prompt_validator
+from lmclient.model_output import ChatModelOutput, ChatModelStreamOutput
 
 
 def is_stream_model_output(model_output: ChatModelOutput) -> TypeGuard[ChatModelStreamOutput]:
     return getattr(model_output, 'stream', None) is not None
+
+
+def is_message(message: Any) -> TypeGuard[Message]:
+    return isinstance(message, MessageTypes)
 
 
 def ensure_messages(prompt: Prompt) -> Messages:
@@ -44,5 +34,14 @@ def ensure_messages(prompt: Prompt) -> Messages:
     if isinstance(prompt, str):
         return [TextMessage(role='user', content=prompt)]
     if isinstance(prompt, dict):
+        return [message_validator.validate_python(prompt)]
+    if isinstance(prompt, MessageTypes):
         return [prompt]
-    return prompt
+
+    messages: list[Message] = []
+    for i in prompt:
+        if is_message(i):
+            messages.append(i)
+        else:
+            messages.append(message_validator.validate_python(i))
+    return messages

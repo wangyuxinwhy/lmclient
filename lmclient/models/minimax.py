@@ -3,22 +3,14 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator
 from typing_extensions import Annotated, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, UnexpectedResponseError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import (
-    Message,
-    Messages,
-    ModelParameters,
-    ModelResponse,
-    Probability,
-    Stream,
-    Temperature,
-    TextMessage,
-)
-from lmclient.utils import is_text_message
+from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
+from lmclient.message import Message, Messages, TextMessage
+from lmclient.model_output import ChatModelOutput, FinishStream, Stream
+from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.types import Probability, Temperature
 
 
 class MinimaxMessage(TypedDict):
@@ -31,7 +23,7 @@ class RoleMeta(TypedDict):
     bot_name: str
 
 
-class MinimaxChatParameters(ModelParameters):
+class MinimaxChatParameters(BaseModel):
     prompt: str = 'MM智能助理是一款由MiniMax自研的，没有调用其他产品的接口的大型语言模型。MiniMax是一家中国科技公司，一直致力于进行大模型相关的研究。'
     role_meta: RoleMeta = {'user_name': '用户', 'bot_name': 'MM智能助理'}
     beam_width: Optional[Annotated[int, Field(ge=1, le=4)]] = None
@@ -50,21 +42,21 @@ class MinimaxChatParameters(ModelParameters):
 
 
 def convert_to_minimax_message(message: Message) -> MinimaxMessage:
-    if not is_text_message(message):
-        raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
-    role = message['role']
-    if role not in ('assistant', 'user'):
-        raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
+    if not isinstance(message, TextMessage):
+        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
 
-    if role == 'assistant':
+    if message.role not in ('assistant', 'user'):
+        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
+
+    if message.role == 'assistant':
         return {
             'sender_type': 'BOT',
-            'text': message['content'],
+            'text': message.content,
         }
 
     return {
         'sender_type': 'USER',
-        'text': message['content'],
+        'text': message.content,
     }
 
 
@@ -80,7 +72,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         api_base: str | None = None,
         system_prompt: str | None = None,
         parameters: MinimaxChatParameters | None = None,
-        **kwagrs: Unpack[HttpChatModelKwargs],
+        **kwagrs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
         parameters = parameters or MinimaxChatParameters()
         if system_prompt is not None:
@@ -115,9 +107,21 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
         try:
-            return [TextMessage(role='assistant', content=response['choices'][0]['text'])]
+            messages = [TextMessage(role='assistant', content=response['choices'][0]['text'])]
+            return ChatModelOutput(
+                chat_model_id=self.model_id,
+                messages=messages,
+                finish_reason=response['choices'][0]['finish_reason'],
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage']),
+                extra_info={
+                    'logprobes': response['choices'][0]['logprobes'],
+                    'input_sensitive': False,
+                    'output_sensitive': False,
+                },
+            )
         except (KeyError, IndexError, TypeError) as e:
             raise UnexpectedResponseError(response) from e
 
@@ -129,11 +133,24 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         return http_parameters
 
     @override
-    def _parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: HttpResponse) -> Stream:
         delta = response['choices'][0]['delta']
         if response['reply']:
-            return Stream(delta=delta, control='finish')
+            return FinishStream(
+                delta=delta,
+                finish_reason=response['choices'][0]['finish_reason'],
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage']),
+                extra_info={
+                    'logprobes': response['choices'][0]['logprobes'],
+                    'input_sensitive': False,
+                    'output_sensitive': False,
+                },
+            )
         return Stream(delta=delta, control='continue')
+
+    def calculate_cost(self, usage: dict[str, int]) -> float:
+        return 0.015 * (usage['total_tokens'] / 1000)
 
     @property
     @override

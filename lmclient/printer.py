@@ -4,8 +4,8 @@ from typing import Protocol
 
 import rich
 
-from lmclient.types import Message, Stream
-from lmclient.utils import is_function_call_message, is_text_message
+from lmclient.message import FunctionCallMessage, Message, TextMessage
+from lmclient.model_output import Stream
 
 
 class Printer(Protocol):
@@ -30,12 +30,12 @@ class SimplePrinter(Printer):
         self.interval = interval
 
     def print_message(self, message: Message) -> None:
-        if is_text_message(message):
-            print(f'{message["role"]}: {message["content"]}')
-        elif is_function_call_message(message):
-            print(f'Function call: {message["content"]["name"]}\nArguments: {message["content"]["arguments"]}')
+        if isinstance(message, TextMessage):
+            print(f'{message.role}: {message.content}')
+        elif isinstance(message, FunctionCallMessage):
+            print(f'Function call: {message.content.name}\nArguments: {message.content.arguments}')
         else:
-            raise RuntimeError(f'Invalid message type: {type(message)}')
+            raise TypeError(f'Invalid message type: {type(message)}')
 
     def print_stream(self, stream: Stream) -> None:
         if stream.control == 'start':
@@ -64,13 +64,13 @@ class RichPrinter(Printer):
         self.interval = interval
 
     def print_message(self, message: Message) -> None:
-        if is_text_message(message):
-            if message['role'] == 'user':
-                rich.print(f'🤠 : [green]{message["content"]}[/green]')
-        elif is_function_call_message(message):
-            print(f'🤖 : [Function call] {message["content"]["name"]}\nArguments: {message["content"]["arguments"]}')
+        if isinstance(message, TextMessage):
+            if message.role == 'user':
+                rich.print(f'🤠 : [green]{message.content}[/green]')
+        elif isinstance(message, FunctionCallMessage):
+            print(f'🤖 : [Function call] {message.content.name}\nArguments: {message.content.arguments}')
         else:
-            raise RuntimeError(f'Invalid message type: {type(message)}')
+            raise TypeError(f'Invalid message type: {type(message)}')
 
     def print_stream(self, stream: Stream) -> None:
         if stream.control == 'start':

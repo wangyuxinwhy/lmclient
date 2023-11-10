@@ -6,15 +6,16 @@ import hmac
 import os
 import time
 import uuid
-from email.errors import MessageError
 from typing import Any, ClassVar, Literal, Optional
 
+from pydantic import BaseModel
 from typing_extensions import Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import UnexpectedResponseError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs, ModelResponse, Stream
-from lmclient.types import Message, Messages, ModelParameters, Probability, Temperature, TextMessage
-from lmclient.utils import is_text_message
+from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
+from lmclient.message import Message, Messages, TextMessage
+from lmclient.model_output import FinishStream
+from lmclient.models.http import ChatModelOutput, HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs, Stream
+from lmclient.types import Probability, Temperature
 
 
 class HunyuanMessage(TypedDict):
@@ -22,27 +23,26 @@ class HunyuanMessage(TypedDict):
     content: str
 
 
-class HunyuanChatParameters(ModelParameters):
+class HunyuanChatParameters(BaseModel):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
 
 
 def convert_to_hunyuan_message(message: Message) -> HunyuanMessage:
-    if not is_text_message(message):
-        raise MessageError(f'Invalid message type: {type(message)}, only TextMessage is allowed')
-    role = message['role']
-    if role not in ('assistant', 'user'):
-        raise MessageError(f'Invalid message role: {role}, only "user" and "assistant" are allowed')
+    if not isinstance(message, TextMessage):
+        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
+
+    if message.role not in ('assistant', 'user'):
+        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
 
     return {
-        'role': role,
-        'content': message['content'],
+        'role': message.role,
+        'content': message.content,
     }
 
 
 class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
     model_type: ClassVar[str] = 'hunyuan'
-    # stream_model = 'basic'
     default_api: ClassVar[str] = 'https://hunyuan.cloud.tencent.com/hyllm/v1/chat/completions'
     default_sign_api: ClassVar[str] = 'hunyuan.cloud.tencent.com/hyllm/v1/chat/completions'
 
@@ -54,7 +54,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         api: str | None = None,
         sign_api: str | None = None,
         parameters: HunyuanChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelKwargs],
+        **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
         parameters = parameters or HunyuanChatParameters()
         super().__init__(parameters=parameters, **kwargs)
@@ -95,17 +95,30 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         }
 
     @override
-    def _parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: HttpResponse) -> Stream:
         message = response['choices'][0]
         if message['finish_reason']:
-            return Stream(delta=message['delta']['content'], control='finish')
+            return FinishStream(
+                delta=message['delta']['content'],
+                control='finish',
+                usage=response['usage'],
+                finish_reason=message['finish_reason'],
+                cost=self.calculate_cost(response['usage']),
+            )
         return Stream(delta=message['delta']['content'], control='continue')
 
     @override
-    def _parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
         if response.get('error'):
             raise UnexpectedResponseError(response)
-        return [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
+        messages = [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
+        return ChatModelOutput(
+            chat_model_id=self.model_id,
+            messages=messages,
+            finish_reason=response['choices'][0]['finish_reason'],
+            usage=response['usage'],
+            cost=self.calculate_cost(response['usage']),
+        )
 
     def generate_json_dict(
         self, messages: list[HunyuanMessage], parameters: HunyuanChatParameters, stream: bool = False
@@ -153,6 +166,9 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         hmacstr = hmac.new(self.secret_key.encode('utf-8'), sign_str.encode('utf-8'), hashlib.sha1).digest()
         signature = base64.b64encode(hmacstr)
         return signature.decode('utf-8')
+
+    def calculate_cost(self, usage: dict[str, Any]) -> float:
+        return (usage['total_tokens'] / 1000) * 0.1
 
     @property
     @override
