@@ -4,7 +4,8 @@ from typing import Protocol
 
 import rich
 
-from lmclient.types import FunctionCallMessage, Message, Stream, TextMessage
+from lmclient.message import FunctionCallMessage, Message, TextMessage
+from lmclient.model_output import Stream
 
 
 class Printer(Protocol):

@@ -4,10 +4,12 @@ import asyncio
 from typing import Literal, Sequence, Type
 
 import pytest
+from pydantic import BaseModel
 
-from lmclient.models import BaseChatModel, ModelRegistry, load_from_model_id
+from lmclient.message import Messages, TextMessage
+from lmclient.model_output import ChatModelStreamOutput
+from lmclient.models import BaseChatModel, ChatModelRegistry, ChatModels, load_from_model_id
 from lmclient.models.http import HttpChatModel
-from lmclient.types import ChatModelStreamOutput, GeneralParameters, Messages, ModelParameters, TextMessage
 
 param_type = Literal['model', 'model_cls', 'parameter', 'parameter_cls']
 
@@ -18,7 +20,7 @@ def get_pytest_params(id_prefix: str, types: Sequence[param_type] | param_type, 
         types = [types]
 
     pytest_params: list = []
-    for model_name, (model_cls, paramter_cls) in ModelRegistry.items():
+    for model_name, (model_cls, paramter_cls) in ChatModelRegistry.items():
         if model_name in exclude:
             continue
         values = []
@@ -37,6 +39,10 @@ def get_pytest_params(id_prefix: str, types: Sequence[param_type] | param_type, 
     return pytest_params
 
 
+def test_model_type_is_unique() -> None:
+    assert len(ChatModels) == len(ChatModelRegistry)
+
+
 def test_load_from_model_id() -> None:
     model = load_from_model_id('openai/gpt-3.5-turbo')
     assert model.model_type == 'openai'
@@ -47,16 +53,16 @@ def test_load_from_model_id() -> None:
 @pytest.mark.parametrize(
     'parameters',
     [
-        None,
-        GeneralParameters(temperature=0.5, top_p=0.85, max_tokens=20),
-        GeneralParameters(temperature=0),
-        GeneralParameters(top_p=0),
+        {},
+        {'temperature': 0.5, 'top_p': 0.85, 'max_tokens': 20},
+        {'temperature': 0},
+        {'top_p': 0},
     ],
 )
-def test_http_chat_model(chat_model: HttpChatModel[ModelParameters], parameters: GeneralParameters | None) -> None:
+def test_http_chat_model(chat_model: HttpChatModel, parameters: dict) -> None:
     chat_model.timeout = 20
     test_messages = [TextMessage(role='user', content='这是测试，只回复你好')]
-    sync_output = chat_model.chat_completion(test_messages, override_parameters=parameters)
+    sync_output = chat_model.chat_completion(test_messages, **parameters)
     async_output = asyncio.run(chat_model.async_chat_completion(test_messages))
 
     assert sync_output.reply != ''
@@ -64,7 +70,7 @@ def test_http_chat_model(chat_model: HttpChatModel[ModelParameters], parameters:
 
 
 @pytest.mark.parametrize('chat_model', get_pytest_params('test_stream_chat_completion', types='model', exclude=['azure']))
-def test_http_stream_chat_model(chat_model: HttpChatModel[ModelParameters]) -> None:
+def test_http_stream_chat_model(chat_model: HttpChatModel) -> None:
     chat_model.timeout = 10
     test_messages = [TextMessage(role='user', content='这是测试，只回复你好')]
     sync_output = list(chat_model.stream_chat_completion(test_messages))[-1]
@@ -86,7 +92,7 @@ async def async_stream_helper(model: BaseChatModel, messages: Messages) -> ChatM
     ('model_cls', 'parameters'),
     get_pytest_params('test_chat_parameters', types=('model_cls', 'parameter'), exclude='zhipu-character'),
 )
-def test_init_chat_parameters(model_cls: Type[BaseChatModel], parameters: ModelParameters, temperature: float = 0.8) -> None:
+def test_init_chat_parameters(model_cls: Type[BaseChatModel], parameters: BaseModel, temperature: float = 0.8) -> None:
     parameters.temperature = temperature
 
     model = model_cls(parameters=parameters)

@@ -1,4 +1,4 @@
-from lmclient import ChatEngine, OpenAIChat, function
+from lmclient import ChatEngine, OpenAIChat, OpenAIChatParameters, function
 
 
 @function
@@ -24,7 +24,7 @@ def google(keyword: str) -> str:
 
 
 def test_function() -> None:
-    model = OpenAIChat()
-    engine = ChatEngine(model, temperature=0, functions=[get_weather, google], stream=False)
+    model = OpenAIChat(parameters=OpenAIChatParameters(functions=[get_weather.json_schema, google.json_schema], temperature=0))
+    engine = ChatEngine(model, functions=[get_weather, google], stream=False, function_call_raise_error=True)
     reply = engine.chat('今天北京天气怎么样？')
     assert '27' in reply

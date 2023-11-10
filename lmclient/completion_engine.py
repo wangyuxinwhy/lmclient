@@ -10,18 +10,21 @@ from typing import (
     Literal,
     NoReturn,
     TypedDict,
+    TypeVar,
 )
 
 import anyio
 import asyncer
 import tqdm
+from pydantic import BaseModel
 from typing_extensions import Self, Unpack
 
-from lmclient.models import load_from_model_id
-from lmclient.models.base import T_P, BaseChatModel, OverrideParameters
-from lmclient.types import ChatModelOutput, Prompt, Prompts
+from lmclient.message import Prompt, Prompts
+from lmclient.model_output import ChatModelOutput
+from lmclient.models import BaseChatModel, load_from_model_id
 from lmclient.utils import ensure_messages
 
+P = TypeVar('P', bound=BaseModel)
 ErrorMode = Literal['raise', 'ignore']
 ProgressBarMode = Literal['auto', 'never', 'always']
 
@@ -33,7 +36,7 @@ class CompletionEngineKwargs(TypedDict):
     progress_bar_mode: ProgressBarMode
 
 
-class CompletionEngine(Generic[T_P]):
+class CompletionEngine(Generic[P]):
     """
     Args:
         chat_model (BaseChatModel[T_P]): The chat model to use for generating completions.
@@ -48,7 +51,7 @@ class CompletionEngine(Generic[T_P]):
 
     def __init__(
         self,
-        chat_model: BaseChatModel[T_P],
+        chat_model: BaseChatModel[P],
         async_capacity: int = 3,
         max_requests_per_minute: int = 20,
         error_mode: ErrorMode = 'raise',
@@ -66,14 +69,10 @@ class CompletionEngine(Generic[T_P]):
         chat_model = load_from_model_id(model_id)
         return cls(chat_model, **kwargs)
 
-    def run(
-        self, prompts: Prompts, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
-    ) -> Generator[ChatModelOutput, None, None]:
+    def run(self, prompts: Prompts, **kwargs: Any) -> Generator[ChatModelOutput, None, None]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         for prompt in prompts:
-            task_result = self._run_single_task(
-                prompt=prompt, progress_bar=progress_bar, override_parameters=override_parameters, **kwargs
-            )
+            task_result = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
             yield task_result
         progress_bar.close()
 
@@ -81,7 +80,6 @@ class CompletionEngine(Generic[T_P]):
         self,
         prompt: Prompt,
         progress_bar: tqdm.tqdm[NoReturn],
-        override_parameters: OverrideParameters[T_P] = None,
         **kwargs: Any,
     ) -> ChatModelOutput:
         messages = ensure_messages(prompt)
@@ -91,25 +89,18 @@ class CompletionEngine(Generic[T_P]):
         self._task_created_time_list.append(int(time.time()))
 
         try:
-            output = self.chat_model.chat_completion(prompt=messages, override_parameters=override_parameters, **kwargs)
-        except BaseException as e:
+            output = self.chat_model.chat_completion(prompt=messages, **kwargs)
+        except Exception as e:
             if self.error_mode == 'raise':
                 raise
             if self.error_mode == 'ignore':
-                return ChatModelOutput(
-                    model_id=self.chat_model.model_id,
-                    parameters=self.chat_model.parameters,
-                    messages=messages,
-                    error=str(e),
-                )
+                return ChatModelOutput(chat_model_id=self.chat_model.model_id, extra_info={'error': str(e)})
             raise ValueError(f'Unknown error mode: {self.error_mode}') from e
         else:
             progress_bar.update(1)
             return output
 
-    async def async_run(
-        self, prompts: Prompts, override_parameters: OverrideParameters[T_P] = None, **kwargs: Any
-    ) -> AsyncGenerator[ChatModelOutput, None]:
+    async def async_run(self, prompts: Prompts, **kwargs: Any) -> AsyncGenerator[ChatModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
@@ -123,7 +114,6 @@ class CompletionEngine(Generic[T_P]):
                     limiter=limiter,
                     task_created_lock=task_created_lock,
                     progress_bar=progress_bar,
-                    override_parameters=override_parameters,
                     **kwargs,
                 )
                 soon_values.append(soon_value)
@@ -140,7 +130,6 @@ class CompletionEngine(Generic[T_P]):
         limiter: anyio.CapacityLimiter,
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm[NoReturn],
-        override_parameters: OverrideParameters[T_P] = None,
         **kwargs: Any,
     ) -> ChatModelOutput:
         messages = ensure_messages(prompt)
@@ -152,19 +141,12 @@ class CompletionEngine(Generic[T_P]):
                     if sleep_time > 0:
                         await anyio.sleep(sleep_time)
                     self._task_created_time_list.append(int(time.time()))
-                output = await self.chat_model.async_chat_completion(
-                    messages, override_parameters=override_parameters, **kwargs
-                )
-            except BaseException as e:
+                output = await self.chat_model.async_chat_completion(messages, **kwargs)
+            except Exception as e:
                 if self.error_mode == 'raise':
                     raise
                 if self.error_mode == 'ignore':
-                    return ChatModelOutput(
-                        model_id=self.chat_model.model_id,
-                        parameters=self.chat_model.parameters,
-                        messages=messages,
-                        error=str(e),
-                    )
+                    return ChatModelOutput(chat_model_id=self.chat_model.model_id, extra_info={'error': str(e)})
 
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
             else:

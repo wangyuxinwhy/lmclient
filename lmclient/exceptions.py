@@ -1,9 +1,23 @@
 import json
-from typing import Any
+from typing import Any, Sequence, Type
+
+from lmclient.message import Message
 
 
 class MessageError(Exception):
-    pass
+    ...
+
+
+class MessageTypeError(MessageError):
+    def __init__(self, invalid_message: Message, allowed_message_type: Sequence[Type[Message]], *args: object) -> None:
+        message = f'invalid message type: {type(invalid_message)}, only {tuple(allowed_message_type)} is allowed'
+        super().__init__(message, *args)
+
+
+class MessageValueError(MessageError):
+    def __init__(self, invalid_message: Message, *args: object) -> None:
+        message = f'invalid message value: {invalid_message}'
+        super().__init__(message, *args)
 
 
 class UnexpectedResponseError(Exception):

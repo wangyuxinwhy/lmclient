@@ -3,24 +3,14 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Dict, List, Literal, Optional
 
-from pydantic import Field, PositiveInt, field_validator, model_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, UnexpectedResponseError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import (
-    FunctionCall,
-    FunctionCallMessage,
-    FunctionJsonSchema,
-    Message,
-    Messages,
-    ModelParameters,
-    ModelResponse,
-    Probability,
-    Stream,
-    Temperature,
-    TextMessage,
-)
+from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
+from lmclient.message import FunctionCall, FunctionCallMessage, Message, Messages, TextMessage
+from lmclient.model_output import ChatModelOutput, FinishStream, Stream
+from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
 class BotSettingDict(TypedDict):
@@ -52,7 +42,7 @@ class MinimaxProMessage(TypedDict):
     function_call: NotRequired[MinimaxFunctionCall]
 
 
-class MinimaxProChatParameters(ModelParameters):
+class MinimaxProChatParameters(BaseModel):
     reply_constraints: ReplyConstrainsDict = {'sender_type': 'BOT', 'sender_name': 'MM智能助理'}
     bot_setting: List[BotSettingDict] = [
         {
@@ -108,7 +98,7 @@ def convert_to_minimax_pro_message(
     if isinstance(message, FunctionCallMessage):
         sender_name = message.name or default_bot_name
         if sender_name is None:
-            raise MessageError(f'bot name is required for function call, message: {message}')
+            raise MessageValueError(message, 'bot name is required')
         return {
             'sender_type': 'BOT',
             'sender_name': sender_name,
@@ -122,7 +112,7 @@ def convert_to_minimax_pro_message(
         if message.role == 'assistant':
             sender_name = message.name or default_bot_name
             if sender_name is None:
-                raise MessageError(f'bot name is required, message: {message}')
+                raise MessageValueError(message, 'bot name is required')
             return {
                 'sender_type': 'BOT',
                 'sender_name': sender_name,
@@ -130,7 +120,7 @@ def convert_to_minimax_pro_message(
             }
         if message.role == 'function':
             if message.name is None:
-                raise MessageError(f'function name is required, message: {message}')
+                raise MessageValueError(message, 'function name is required')
             return {
                 'sender_type': 'FUNCTION',
                 'sender_name': message.name,
@@ -139,8 +129,8 @@ def convert_to_minimax_pro_message(
         if message.role == 'user':
             sender_name = message.name or default_user_name
             return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message.content}
-        raise MessageError(f'invalid message role: {message.role}')
-    raise MessageError(f'invalid role {message["role"]}, must be one of "user", "assistant", "function"')
+        raise MessageValueError(message, f'invalid message role: {message.role}')
+    raise MessageTypeError(message, allowed_message_type=(TextMessage, FunctionCallMessage))
 
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
@@ -157,7 +147,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         system_prompt: str | None = None,
         default_user_name: str = '用户',
         parameters: MinimaxProChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelKwargs],
+        **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
         parameters = parameters or MinimaxProChatParameters()
         self.default_user_name = default_user_name
@@ -194,9 +184,23 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
         try:
-            return [self._convert_to_message(i) for i in response['choices'][0]['messages']]
+            messages = [self._convert_to_message(i) for i in response['choices'][0]['messages']]
+            finish_reason = response['choices'][0]['finish_reason']
+            num_web_search = sum([i for i in response['choices'][0]['messages'] if i['sender_name'] == 'plugin_web_search'])
+
+            return ChatModelOutput(
+                chat_model_id=self.model_id,
+                messages=messages,
+                finish_reason=finish_reason,
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage'], num_web_search),
+                extra_info={
+                    'input_sensitive': response['input_sensitive'],
+                    'output_sensitive': response['output_sensitive'],
+                },
+            )
         except (KeyError, IndexError, TypeError) as e:
             raise UnexpectedResponseError(response) from e
 
@@ -207,10 +211,19 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         return http_parameters
 
     @override
-    def _parse_stream_response(self, response: ModelResponse) -> Stream:
+    def _parse_stream_response(self, response: HttpResponse) -> Stream:
         delta = response['choices'][0]['messages'][0]['text']
         if response['reply']:
-            return Stream(delta=delta, control='finish')
+            return FinishStream(
+                delta=delta,
+                finish_reason=response['choices'][0]['finish_reason'],
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage']),
+                extra_info={
+                    'input_sensitive': response['input_sensitive'],
+                    'output_sensitive': response['output_sensitive'],
+                },
+            )
         return Stream(delta=delta, control='continue')
 
     @staticmethod
@@ -233,6 +246,9 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
             name=message['sender_name'],
             content=message['text'],
         )
+
+    def calculate_cost(self, usage: dict[str, int], num_web_search: int = 0) -> float:
+        return 0.015 * (usage['total_tokens'] / 1000) + (0.03 * num_web_search)
 
     @property
     @override

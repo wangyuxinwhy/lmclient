@@ -4,23 +4,18 @@ import hashlib
 import json
 import os
 import time
+from contextvars import ContextVar
+from datetime import datetime
 from typing import Any, ClassVar, Literal, Optional, TypedDict
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Self, Unpack, override
 
-from lmclient.exceptions import MessageError, UnexpectedResponseError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import (
-    Message,
-    Messages,
-    ModelParameters,
-    ModelResponse,
-    Probability,
-    Stream,
-    Temperature,
-    TextMessage,
-)
+from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
+from lmclient.message import Message, Messages, TextMessage
+from lmclient.model_output import ChatModelOutput, FinishStream, Stream
+from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.types import Probability, Temperature
 
 
 class BaichuanMessage(TypedDict):
@@ -28,16 +23,29 @@ class BaichuanMessage(TypedDict):
     content: str
 
 
-class BaichuanChatParameters(ModelParameters):
+class BaichuanChatParameters(BaseModel):
     temperature: Optional[Temperature] = None
     top_k: Optional[Annotated[int, Field(ge=0)]] = None
     top_p: Optional[Probability] = None
     with_search_enhance: Optional[bool] = None
 
 
+def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
+    if not isinstance(message, TextMessage):
+        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
+
+    if message.role not in ('assistant', 'user'):
+        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
+
+    return {
+        'role': message.role,
+        'content': message.content,
+    }
+
+
 class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
-    model_type: ClassVar[str] = 'zhipu'
-    stream_model = 'basic'
+    model_type: ClassVar[str] = 'baichuan'
+    parse_stream_strategy: ClassVar[str] = 'basic'
     default_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/chat'
     default_stream_api_base: ClassVar[str] = 'https://api.baichuan-ai.com/v1/stream/chat'
 
@@ -49,7 +57,7 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         api_base: str | None = None,
         stream_api_base: str | None = None,
         parameters: BaichuanChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelKwargs],
+        **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
         parameters = parameters or BaichuanChatParameters()
         super().__init__(parameters=parameters, **kwargs)
@@ -61,10 +69,11 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         self.stream_api_base = stream_api_base or self.default_stream_api_base
         self.stream_api_base.rstrip('/')
         self._stream_start = False
+        self._stream_reply = ContextVar('stream_reply', default='')
 
     @override
     def _get_request_parameters(self, messages: Messages, parameters: BaichuanChatParameters) -> HttpxPostKwargs:
-        baichuan_messages: list[BaichuanMessage] = [self.convert_to_baichuan_message(message) for message in messages]
+        baichuan_messages: list[BaichuanMessage] = [convert_to_baichuan_message(message) for message in messages]
         data = {
             'model': self.model,
             'messages': baichuan_messages,
@@ -96,24 +105,19 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         return http_parameters
 
     @override
-    def _parse_stream_response(self, response: ModelResponse) -> Stream:
-        message = response['data']['messages'][0]
+    def _parse_stream_response(self, response: HttpResponse) -> Stream:
+        message = response['data']['messages'][-1]
+
         if message['finish_reason']:
-            return Stream(delta=message['content'], control='finish')
+            return FinishStream(
+                delta=message['content'],
+                control='finish',
+                finish_reason=message['finish_reason'],
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage']),
+            )
+
         return Stream(delta=message['content'], control='continue')
-
-    @staticmethod
-    def convert_to_baichuan_message(message: Message) -> BaichuanMessage:
-        if not isinstance(message, TextMessage):
-            raise MessageError(f'invalid message type: {type(message)}, only TextMessage is allowed')
-        role = message.role
-        if role not in ('assistant', 'user'):
-            raise MessageError(f'invalid message role: {role}, only "user" and "assistant" are allowed')
-
-        return {
-            'role': role,
-            'content': message.content,
-        }
 
     @staticmethod
     def calculate_md5(input_string: str) -> str:
@@ -122,12 +126,27 @@ class BaichuanChat(HttpChatModel[BaichuanChatParameters]):
         return md5.hexdigest()
 
     @override
-    def _parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
         try:
             text = response['data']['messages'][-1]['content']
-            return [TextMessage(role='assistant', content=text)]
+            finish_reason = response['data']['messages'][-1]['finish_reason']
+            return ChatModelOutput(
+                chat_model_id=self.model_id,
+                messages=[TextMessage(role='assistant', content=text)],
+                finish_reason=finish_reason,
+                usage=response['usage'],
+                cost=self.calculate_cost(response['usage']),
+            )
         except (KeyError, IndexError) as e:
             raise UnexpectedResponseError(response) from e
+
+    def calculate_cost(self, usage: dict[str, int]) -> float | None:
+        if self.name == 'Baichuan2-53B':
+            eight_am = 8
+            if 0 <= datetime.now().hour < eight_am:
+                return (usage['total_tokens'] * 0.01) / 1000
+            return (usage['total_tokens'] * 0.02) / 1000
+        return None
 
     @property
     def name(self) -> str:

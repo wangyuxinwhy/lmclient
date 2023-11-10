@@ -1,4 +1,4 @@
-from lmclient.types import FunctionCall, FunctionCallMessage, TextMessage
+from lmclient.message import FunctionCall, FunctionCallMessage, TextMessage
 from lmclient.utils import ensure_messages
 
 

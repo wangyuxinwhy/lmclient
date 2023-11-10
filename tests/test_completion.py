@@ -4,14 +4,16 @@ import asyncio
 import time
 from typing import Any, AsyncIterator, Iterator
 
+from pydantic import BaseModel
 from typing_extensions import Self
 
 from lmclient.completion_engine import CompletionEngine
+from lmclient.message import Messages, Prompts, TextMessage
+from lmclient.model_output import ChatModelOutput, ChatModelStreamOutput, Stream
 from lmclient.models.base import BaseChatModel
-from lmclient.types import ChatModelOutput, ChatModelStreamOutput, Messages, ModelParameters, Prompts, Stream, TextMessage
 
 
-class TestModelParameters(ModelParameters):
+class TestModelParameters(BaseModel):
     prefix: str = 'Completed:'
 
 
@@ -24,23 +26,18 @@ class TestModel(BaseChatModel[TestModelParameters]):
 
     def _chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
         content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(
-            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)]
-        )
+        return ChatModelOutput(chat_model_id='test', messages=[TextMessage(role='assistant', content=content)])
 
     async def _async_chat_completion(self, messages: Messages, parameters: TestModelParameters) -> ChatModelOutput:
         content = f'Completed: {messages[-1].content}'
-        return ChatModelOutput(
-            model_id='test', parameters=parameters, messages=[TextMessage(role='assistant', content=content)]
-        )
+        return ChatModelOutput(chat_model_id='test', messages=[TextMessage(role='assistant', content=content)])
 
     def _stream_chat_completion(
         self, messages: Messages, parameters: TestModelParameters
     ) -> Iterator[ChatModelStreamOutput[TestModelParameters]]:
         content = f'Completed: {messages[-1].content}'
         yield ChatModelStreamOutput(
-            model_id='test',
-            parameters=parameters,
+            chat_model_id='test',
             messages=[TextMessage(role='assistant', content=content)],
             stream=Stream(delta=content, control='finish'),
         )
@@ -50,8 +47,7 @@ class TestModel(BaseChatModel[TestModelParameters]):
     ) -> AsyncIterator[ChatModelStreamOutput[TestModelParameters]]:
         content = f'Completed: {messages[-1].content}'
         yield ChatModelStreamOutput(
-            model_id='test',
-            parameters=parameters,
+            chat_model_id='test',
             messages=[TextMessage(role='assistant', content=content)],
             stream=Stream(delta=content, control='finish'),
         )

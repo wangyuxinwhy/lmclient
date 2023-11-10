@@ -4,17 +4,8 @@ from typing import Any
 
 from typing_extensions import TypeGuard
 
-from lmclient.types import (
-    ChatModelOutput,
-    ChatModelStreamOutput,
-    Message,
-    Messages,
-    MessageTypes,
-    Prompt,
-    TextMessage,
-    message_validator,
-    prompt_validator,
-)
+from lmclient.message import Message, Messages, MessageTypes, Prompt, TextMessage, message_validator, prompt_validator
+from lmclient.model_output import ChatModelOutput, ChatModelStreamOutput
 
 
 def is_stream_model_output(model_output: ChatModelOutput) -> TypeGuard[ChatModelStreamOutput]:

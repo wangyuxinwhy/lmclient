@@ -7,7 +7,8 @@ from docstring_parser import parse
 from pydantic import TypeAdapter, validate_call
 from typing_extensions import ParamSpec
 
-from lmclient.types import FunctionCallMessage, FunctionJsonSchema, Message
+from lmclient.message import FunctionCallMessage, Message
+from lmclient.types import FunctionJsonSchema
 
 P = ParamSpec('P')
 T = TypeVar('T')

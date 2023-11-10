@@ -3,35 +3,18 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
-from pydantic import Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageError, UnexpectedResponseError
-from lmclient.models.http import HttpChatModel, HttpChatModelKwargs, HttpxPostKwargs
-from lmclient.types import (
-    FunctionCall,
-    FunctionCallMessage,
-    GeneralParameters,
-    JsonSchema,
-    Message,
-    Messages,
-    ModelParameters,
-    ModelResponse,
-    Probability,
-    Stream,
-    Temperature,
-    TextMessage,
-)
+from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
+from lmclient.message import FunctionCall, FunctionCallMessage, Message, Messages, TextMessage
+from lmclient.model_output import ChatModelOutput, FinishStream, Stream
+from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
 class FunctionCallName(TypedDict):
     name: str
-
-
-class OpenaiFunction(TypedDict):
-    name: str
-    parameters: JsonSchema
-    description: NotRequired[str]
 
 
 class OpenaiFunctionCall(TypedDict):
@@ -46,27 +29,17 @@ class OpenAIMessage(TypedDict):
     function_call: NotRequired[OpenaiFunctionCall]
 
 
-class OpenAIChatParameters(ModelParameters):
+class OpenAIChatParameters(BaseModel):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     max_tokens: Optional[PositiveInt] = None
-    functions: Optional[List[OpenaiFunction]] = None
+    functions: Optional[List[FunctionJsonSchema]] = None
     function_call: Union[Literal['auto'], FunctionCallName, None] = None
     stop: Union[str, List[str], None] = None
     presence_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
     frequency_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
     logit_bias: Optional[Dict[int, Annotated[int, Field(ge=-100, le=100)]]] = None
     user: Optional[str] = None
-
-    @override
-    @classmethod
-    def from_general_parameters(cls, general_parameters: GeneralParameters) -> Self:
-        parameters = general_parameters.model_copy(deep=True)
-        if parameters.functions:
-            for function in parameters.functions:
-                function.pop('examples', None)
-                function.pop('responses', None)
-        return super().from_general_parameters(parameters)
 
 
 def convert_to_openai_message(message: Message) -> OpenAIMessage:
@@ -83,7 +56,7 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
         role = message.role
         if role == 'function':
             if message.name is None:
-                raise MessageError(f'function name is required, message: {message}')
+                raise MessageValueError(message, 'function name is required')
             return {
                 'role': role,
                 'name': message.name,
@@ -95,14 +68,29 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
             'content': message.content,
         }
 
-    raise MessageError(f'invalid message type: {type(message)}')
+    raise MessageTypeError(message, allowed_message_type=(TextMessage, FunctionCallMessage))
 
 
-def parse_openai_model_reponse(response: ModelResponse) -> Messages:
+def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float | None:
+    dollar_to_yuan = 7
+    if model_name in ('gpt-4-1106-preview', 'gpt-4-1106-vision-preview'):
+        return (0.01 * dollar_to_yuan) * (input_tokens / 1000) + (0.03 * dollar_to_yuan) * (output_tokens / 1000)
+    if 'gpt-4-turbo' in model_name:
+        return (0.01 * dollar_to_yuan) * (input_tokens / 1000) + (0.03 * dollar_to_yuan) * (output_tokens / 1000)
+    if 'gpt-4-32k' in model_name:
+        return (0.06 * dollar_to_yuan) * (input_tokens / 1000) + (0.12 * dollar_to_yuan) * (output_tokens / 1000)
+    if 'gpt-4' in model_name:
+        return (0.03 * dollar_to_yuan) * (input_tokens / 1000) + (0.06 * dollar_to_yuan) * (output_tokens / 1000)
+    if 'gpt-3.5-turbo' in model_name:
+        return (0.001 * dollar_to_yuan) * (input_tokens / 1000) + (0.002 * dollar_to_yuan) * (output_tokens / 1000)
+    return None
+
+
+def parse_openai_model_reponse(response: HttpResponse) -> ChatModelOutput:
     function_call: OpenaiFunctionCall = response['choices'][0]['message'].get('function_call')
     try:
         if function_call:
-            return [
+            messages = [
                 FunctionCallMessage(
                     role='assistant',
                     content=FunctionCall(
@@ -111,21 +99,28 @@ def parse_openai_model_reponse(response: ModelResponse) -> Messages:
                     ),
                 )
             ]
-
-        text: str = response['choices'][0]['message']['content']
-        return [
-            TextMessage(
-                role='assistant',
-                content=text,
-            )
-        ]
+        else:
+            text: str = response['choices'][0]['message']['content']
+            messages = [
+                TextMessage(
+                    role='assistant',
+                    content=text,
+                )
+            ]
     except (KeyError, IndexError) as e:
         raise UnexpectedResponseError(response) from e
+    else:
+        return ChatModelOutput(
+            chat_model_id='openai/' + response['model'],
+            messages=messages,
+            finish_reason=response['choices'][0]['finish_reason'],
+            usage=response['usage'],
+            cost=calculate_cost(response['model'], response['usage']['prompt_tokens'], response['usage']['completion_tokens']),
+        )
 
 
 class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
     model_type: ClassVar[str] = 'openai'
-    support_stream: ClassVar[bool] = True
     default_api_base: ClassVar[str] = 'https://api.openai.com/v1'
 
     def __init__(
@@ -135,7 +130,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         api_base: str | None = None,
         system_prompt: str | None = None,
         parameters: OpenAIChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelKwargs],
+        **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)
@@ -165,7 +160,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: ModelResponse) -> Messages:
+    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
         return parse_openai_model_reponse(response)
 
     @override
@@ -175,17 +170,14 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         return http_parameters
 
     @override
-    def _parse_stream_response(self, response: ModelResponse) -> Stream:
-        if response.get('data') == '[DONE]':
-            return Stream(delta='', control='done')
-
+    def _parse_stream_response(self, response: HttpResponse) -> Stream:
         delta = response['choices'][0]['delta']
         if 'role' in delta:
             return Stream(delta='', control='start')
         if 'content' in delta:
             return Stream(delta=delta['content'], control='continue')
 
-        return Stream(delta='', control='finish')
+        return FinishStream(finish_reason=response['choices'][0]['finish_reason'])
 
     @property
     @override
