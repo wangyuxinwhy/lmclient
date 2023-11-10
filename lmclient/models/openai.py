@@ -17,16 +17,30 @@ class FunctionCallName(TypedDict):
     name: str
 
 
-class OpenaiFunctionCall(TypedDict):
+class OpenAIFunctionCall(TypedDict):
     name: str
     arguments: str
+
+
+class OpenAITool(TypedDict):
+    type: Literal['function']
+    function: FunctionJsonSchema
+
+
+class OpenAIToolChoice(TypedDict):
+    type: Literal['function']
+    function: FunctionCallName
 
 
 class OpenAIMessage(TypedDict):
     role: str
     content: Optional[str]
     name: NotRequired[str]
-    function_call: NotRequired[OpenaiFunctionCall]
+    function_call: NotRequired[OpenAIFunctionCall]
+
+
+class OpenAIResponseFormat(TypedDict):
+    type: Literal['json_object', 'text']
 
 
 class OpenAIChatParameters(BaseModel):
@@ -40,6 +54,10 @@ class OpenAIChatParameters(BaseModel):
     frequency_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
     logit_bias: Optional[Dict[int, Annotated[int, Field(ge=-100, le=100)]]] = None
     user: Optional[str] = None
+    response_format: Optional[OpenAIResponseFormat] = None
+    seed: Optional[int] = None
+    tools: Optional[List[OpenAITool]] = None
+    tool_choice: Union[Literal['auto'], OpenAIToolChoice, None] = None
 
 
 def convert_to_openai_message(message: Message) -> OpenAIMessage:
@@ -87,7 +105,7 @@ def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> fl
 
 
 def parse_openai_model_reponse(response: HttpResponse) -> ChatModelOutput:
-    function_call: OpenaiFunctionCall = response['choices'][0]['message'].get('function_call')
+    function_call: OpenAIFunctionCall = response['choices'][0]['message'].get('function_call')
     try:
         if function_call:
             messages = [
@@ -110,12 +128,16 @@ def parse_openai_model_reponse(response: HttpResponse) -> ChatModelOutput:
     except (KeyError, IndexError) as e:
         raise UnexpectedResponseError(response) from e
     else:
+        extra_info = {}
+        if system_fingerprint := response.get('system_fingerprint'):
+            extra_info['system_fingerprint'] = system_fingerprint
         return ChatModelOutput(
             chat_model_id='openai/' + response['model'],
             messages=messages,
             finish_reason=response['choices'][0]['finish_reason'],
             usage=response['usage'],
             cost=calculate_cost(response['model'], response['usage']['prompt_tokens'], response['usage']['completion_tokens']),
+            extra_info=extra_info
         )
 
 
@@ -145,7 +167,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         headers = {
             'Authorization': f'Bearer {self.api_key}',
         }
-        parameters_dict = parameters.model_dump(exclude_defaults=True)
+        parameters_dict = {**parameters.model_dump(exclude_unset=True), **parameters.model_dump(exclude_none=True)}
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {

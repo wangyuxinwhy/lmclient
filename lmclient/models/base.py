@@ -73,4 +73,4 @@ class BaseChatModel(Generic[P], ABC):
             yield i
 
     def _merge_parameters(self, **override_parameters: Any) -> P:
-        return self.parameters.__class__.model_validate({**self.parameters.model_dump(), **override_parameters})
+        return self.parameters.__class__.model_validate({**self.parameters.model_dump(exclude_unset=True), **override_parameters})
