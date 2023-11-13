@@ -38,7 +38,7 @@ class FinishStream(Stream):
     finish_reason: str = ''
     usage: Dict[str, int] = {}
     cost: Optional[float] = None
-    extra_info: Dict[str, Any] = {}
+    extra: Dict[str, Any] = {}
 
 
 class ChatCompletionModelStreamOutput(ChatCompletionModelOutput):

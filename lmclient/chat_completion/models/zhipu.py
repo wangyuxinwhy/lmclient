@@ -31,27 +31,27 @@ API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
 
 
-class ZhiPuRef(TypedDict):
+class ZhipuRef(TypedDict):
     enable: NotRequired[bool]
     search_query: NotRequired[str]
 
 
-class ZhiPuChatParameters(ModelParameters):
+class ZhipuChatParameters(ModelParameters):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     request_id: Optional[str] = None
-    ref: Optional[ZhiPuRef] = None
+    ref: Optional[ZhipuRef] = None
 
 
-class ZhiPuMeta(TypedDict):
+class ZhipuMeta(TypedDict):
     user_info: str
     bot_info: str
     bot_name: str
     user_name: str
 
 
-class ZhiPuCharacterChatParameters(ModelParameters):
-    meta: ZhiPuMeta = {
+class ZhipuCharacterChatParameters(ModelParameters):
+    meta: ZhipuMeta = {
         'user_info': '我是陆星辰，是一个男性，是一位知名导演，也是苏梦远的合作导演。',
         'bot_info': '苏梦远，本名苏远心，是一位当红的国内女歌手及演员。',
         'bot_name': '苏梦远',
@@ -60,12 +60,12 @@ class ZhiPuCharacterChatParameters(ModelParameters):
     request_id: Optional[str] = None
 
 
-class ZhiPuMessage(TypedDict):
+class ZhipuMessage(TypedDict):
     role: Literal['user', 'assistant']
     content: str
 
 
-def convert_to_zhipu_message(message: Message) -> ZhiPuMessage:
+def convert_to_zhipu_message(message: Message) -> ZhipuMessage:
     if isinstance(message, UserMessage):
         return {
             'role': 'user',
@@ -102,7 +102,7 @@ def generate_token(api_key: str) -> str:
     )
 
 
-class BaseZhiPuChat(HttpChatModel[P]):
+class BaseZhipuChat(HttpChatModel[P]):
     default_api_base: ClassVar[str] = 'https://open.bigmodel.cn/api/paas/v3/model-api'
 
     def __init__(
@@ -169,6 +169,7 @@ class BaseZhiPuChat(HttpChatModel[P]):
             return 0.015 * (usage['total_tokens'] / 1000)
         return None
 
+    @property
     @override
     def name(self) -> str:
         return self.model
@@ -179,7 +180,7 @@ class BaseZhiPuChat(HttpChatModel[P]):
         return cls(model=name, **kwargs)
 
 
-class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
+class ZhipuChat(BaseZhipuChat[ZhipuChatParameters]):
     model_type: ClassVar[str] = 'zhipu'
 
     def __init__(
@@ -187,14 +188,14 @@ class ZhiPuChat(BaseZhiPuChat[ZhiPuChatParameters]):
         model: str = 'chatglm_turbo',
         api_key: str | None = None,
         api_base: str | None = None,
-        parameters: ZhiPuChatParameters | None = None,
+        parameters: ZhipuChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
-        parameters = parameters or ZhiPuChatParameters()
+        parameters = parameters or ZhipuChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)
 
 
-class ZhiPuCharacterChat(BaseZhiPuChat[ZhiPuCharacterChatParameters]):
+class ZhipuCharacterChat(BaseZhipuChat[ZhipuCharacterChatParameters]):
     model_type: ClassVar[str] = 'zhipu-character'
 
     def __init__(
@@ -202,8 +203,8 @@ class ZhiPuCharacterChat(BaseZhiPuChat[ZhiPuCharacterChatParameters]):
         model: str = 'characterglm',
         api_key: str | None = None,
         api_base: str | None = None,
-        parameters: ZhiPuCharacterChatParameters | None = None,
+        parameters: ZhipuCharacterChatParameters | None = None,
         **kwargs: Unpack[HttpChatModelInitKwargs],
     ) -> None:
-        parameters = parameters or ZhiPuCharacterChatParameters()
+        parameters = parameters or ZhipuCharacterChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)

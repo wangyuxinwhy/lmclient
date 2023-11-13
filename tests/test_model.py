@@ -95,7 +95,7 @@ async def async_stream_helper(model: ChatCompletionModel, prompt: Prompt) -> Cha
 
 @pytest.mark.parametrize(
     ('model_cls', 'parameters'),
-    get_pytest_params('test_chat_parameters', types=('model_cls', 'parameter'), exclude='zhipu-character'),
+    get_pytest_params('test_chat_parameters', types=('model_cls', 'parameter'), exclude=('zhipu-character', 'bailian')),
 )
 def test_init_chat_parameters(model_cls: Type[ChatCompletionModel], parameters: BaseModel, temperature: float = 0.8) -> None:
     parameters.temperature = temperature

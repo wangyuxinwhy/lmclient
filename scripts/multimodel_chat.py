@@ -1,6 +1,6 @@
 import asyncio
 
-from lmclient import ChatEngine, MinimaxProChat, OpenAIChat, WenxinChat, ZhiPuChat
+from lmclient import ChatEngine, MinimaxProChat, OpenAIChat, WenxinChat, ZhipuChat
 
 chat_models = {
     'wenxin': WenxinChat(timeout=20),
@@ -8,7 +8,7 @@ chat_models = {
     'gpt4': OpenAIChat(model='gpt-4'),
     'gpt3.5': OpenAIChat(model='gpt-3.5-turbo'),
     'minimax': MinimaxProChat(),
-    'zhipu': ZhiPuChat(),
+    'zhipu': ZhipuChat(),
 }
 engines = {model_name: ChatEngine(chat_model=chat_model) for model_name, chat_model in chat_models.items()}  # type: ignore
 
