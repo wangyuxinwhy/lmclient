@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 import os
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Union, cast
 
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import Field, PositiveInt
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
-from lmclient.message import FunctionCall, FunctionCallMessage, Message, Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, FinishStream, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    FunctionCall,
+    FunctionCallMessage,
+    FunctionMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    ToolCall,
+    ToolCallsMessage,
+    ToolMessage,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
@@ -17,19 +35,41 @@ class FunctionCallName(TypedDict):
     name: str
 
 
-class OpenaiFunctionCall(TypedDict):
+class OpenAIFunctionCall(TypedDict):
     name: str
     arguments: str
+
+
+class OpenAITool(TypedDict):
+    type: Literal['function']
+    function: FunctionJsonSchema
+
+
+class OpenAIToolChoice(TypedDict):
+    type: Literal['function']
+    function: FunctionCallName
+
+
+class OpenAIToolCall(TypedDict):
+    id: str
+    type: Literal['function']
+    function: OpenAIFunctionCall
 
 
 class OpenAIMessage(TypedDict):
     role: str
     content: Optional[str]
     name: NotRequired[str]
-    function_call: NotRequired[OpenaiFunctionCall]
+    function_call: NotRequired[OpenAIFunctionCall]
+    tool_call_id: NotRequired[str]
+    tool_calls: NotRequired[List[OpenAIToolCall]]
 
 
-class OpenAIChatParameters(BaseModel):
+class OpenAIResponseFormat(TypedDict):
+    type: Literal['json_object', 'text']
+
+
+class OpenAIChatParameters(ModelParameters):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     max_tokens: Optional[PositiveInt] = None
@@ -40,9 +80,49 @@ class OpenAIChatParameters(BaseModel):
     frequency_penalty: Optional[Annotated[float, Field(ge=-2, le=2)]] = None
     logit_bias: Optional[Dict[int, Annotated[int, Field(ge=-100, le=100)]]] = None
     user: Optional[str] = None
+    response_format: Optional[OpenAIResponseFormat] = None
+    seed: Optional[int] = None
+    tools: Optional[List[OpenAITool]] = None
+    tool_choice: Union[Literal['auto'], OpenAIToolChoice, None] = None
 
 
 def convert_to_openai_message(message: Message) -> OpenAIMessage:
+    if isinstance(message, UserMessage):
+        return {
+            'role': 'user',
+            'content': message.content,
+        }
+
+    if isinstance(message, AssistantMessage):
+        return {
+            'role': 'assistant',
+            'content': message.content,
+        }
+
+    if isinstance(message, ToolCallsMessage):
+        return {
+            'role': 'assistant',
+            'content': None,
+            'tool_calls': [
+                {
+                    'id': tool_call.id,
+                    'type': 'function',
+                    'function': {
+                        'name': tool_call.function.name,
+                        'arguments': tool_call.function.arguments,
+                    },
+                }
+                for tool_call in message.content
+            ],
+        }
+
+    if isinstance(message, ToolMessage):
+        return {
+            'role': 'tool',
+            'tool_call_id': message.tool_call_id,
+            'content': message.content,
+        }
+
     if isinstance(message, FunctionCallMessage):
         return {
             'role': 'assistant',
@@ -52,23 +132,25 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
             },
             'content': None,
         }
-    if isinstance(message, TextMessage):
-        role = message.role
-        if role == 'function':
-            if message.name is None:
-                raise MessageValueError(message, 'function name is required')
-            return {
-                'role': role,
-                'name': message.name,
-                'content': message.content,
-            }
 
+    if isinstance(message, FunctionMessage):
         return {
-            'role': role,
+            'role': 'function',
+            'name': message.name,
             'content': message.content,
         }
 
-    raise MessageTypeError(message, allowed_message_type=(TextMessage, FunctionCallMessage))
+    raise MessageTypeError(
+        message,
+        allowed_message_type=(
+            UserMessage,
+            AssistantMessage,
+            FunctionMessage,
+            FunctionCallMessage,
+            ToolCallsMessage,
+            ToolMessage,
+        ),
+    )
 
 
 def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float | None:
@@ -86,36 +168,50 @@ def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> fl
     return None
 
 
-def parse_openai_model_reponse(response: HttpResponse) -> ChatModelOutput:
-    function_call: OpenaiFunctionCall = response['choices'][0]['message'].get('function_call')
+def parse_openai_model_reponse(response: HttpResponse) -> ChatCompletionModelOutput:
+    message = response['choices'][0]['message']
     try:
-        if function_call:
+        if function_call := message.get('function_call'):
+            function_call = cast(OpenAIFunctionCall, function_call)
             messages = [
                 FunctionCallMessage(
-                    role='assistant',
                     content=FunctionCall(
                         name=function_call['name'],
                         arguments=function_call['arguments'],
                     ),
                 )
             ]
-        else:
-            text: str = response['choices'][0]['message']['content']
+        elif tool_calls := message.get('tool_calls'):
+            tool_calls = cast(List[OpenAIToolCall], tool_calls)
             messages = [
-                TextMessage(
-                    role='assistant',
-                    content=text,
+                ToolCallsMessage(
+                    content=[
+                        ToolCall(
+                            id=tool_call['id'],
+                            function=FunctionCall(
+                                name=tool_call['function']['name'],
+                                arguments=tool_call['function']['arguments'],
+                            ),
+                        )
+                        for tool_call in tool_calls
+                    ],
                 )
             ]
+        else:
+            messages = [AssistantMessage(content=message['content'])]
     except (KeyError, IndexError) as e:
         raise UnexpectedResponseError(response) from e
     else:
-        return ChatModelOutput(
+        extra_info = {}
+        if system_fingerprint := response.get('system_fingerprint'):
+            extra_info['system_fingerprint'] = system_fingerprint
+        return ChatCompletionModelOutput(
             chat_model_id='openai/' + response['model'],
             messages=messages,
             finish_reason=response['choices'][0]['finish_reason'],
             usage=response['usage'],
             cost=calculate_cost(response['model'], response['usage']['prompt_tokens'], response['usage']['completion_tokens']),
+            extra=extra_info,
         )
 
 
@@ -142,16 +238,16 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
     @override
     def _get_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
         openai_messages = [convert_to_openai_message(message) for message in messages]
+        if self.system_prompt:
+            openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
+
         headers = {
             'Authorization': f'Bearer {self.api_key}',
         }
-        parameters_dict = parameters.model_dump(exclude_defaults=True)
-        if self.system_prompt:
-            openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
         params = {
             'model': self.model,
             'messages': openai_messages,
-            **parameters_dict,
+            **parameters.custom_model_dump(),
         }
         return {
             'url': f'{self.api_base}/chat/completions',
@@ -160,7 +256,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         return parse_openai_model_reponse(response)
 
     @override

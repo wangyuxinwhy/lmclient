@@ -23,8 +23,22 @@ def google(keyword: str) -> str:
     return '没有内容'
 
 
-def test_function() -> None:
+def test_openai_function() -> None:
     model = OpenAIChat(parameters=OpenAIChatParameters(functions=[get_weather.json_schema, google.json_schema], temperature=0))
-    engine = ChatEngine(model, functions=[get_weather, google], stream=False, function_call_raise_error=True)
+    engine = ChatEngine(model, functions=[get_weather, google], stream=False, call_raise_error=True)
+    reply = engine.chat('今天北京天气怎么样？')
+    assert '27' in reply
+
+
+def test_openai_tool() -> None:
+    model = OpenAIChat(
+        parameters=OpenAIChatParameters(
+            tools=[
+                {'type': 'function', 'function': get_weather.json_schema},
+                {'type': 'function', 'function': google.json_schema},
+            ]
+        )
+    )
+    engine = ChatEngine(model, functions=[get_weather, google], stream=False, call_raise_error=True)
     reply = engine.chat('今天北京天气怎么样？')
     assert '27' in reply

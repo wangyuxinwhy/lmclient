@@ -1,6 +1,8 @@
 from typing import Literal
 
-from lmclient.function import function
+from pydantic import BaseModel
+
+from lmclient.function import function, get_json_schema
 
 
 def get_weather(city: str, country: Literal['US', 'CN'] = 'US') -> str:
@@ -17,9 +19,25 @@ def get_weather(city: str, country: Literal['US', 'CN'] = 'US') -> str:
     return f'The weather in {city}, {country} is 72 degrees and sunny'
 
 
-def test_function_decrator() -> None:
-    wrapped = function(get_weather)
-    json_schema = {
+class UserInfo(BaseModel):
+    name: str
+    age: int
+
+
+@function
+def upload_user_info(user_info: UserInfo) -> Literal['success']:
+    """
+    Uploads user information to the database.
+
+    Args:
+        user_info (UserInfo): The user information to be uploaded.
+    """
+    return 'success'
+
+
+def test_get_json_schema() -> None:
+    json_schema = get_json_schema(get_weather)
+    expected_json_schema = {
         'name': 'get_weather',
         'description': 'Returns a string describing the weather in a given city and country.',
         'parameters': {
@@ -36,4 +54,9 @@ def test_function_decrator() -> None:
             'type': 'object',
         },
     }
-    assert wrapped.json_schema == json_schema
+    assert json_schema == expected_json_schema
+
+
+def test_validate_function() -> None:
+    output = upload_user_info(user_info={'name': 'John', 'age': 20})  # type: ignore
+    assert output == 'success'

@@ -7,11 +7,29 @@ from docstring_parser import parse
 from pydantic import TypeAdapter, validate_call
 from typing_extensions import ParamSpec
 
-from lmclient.message import FunctionCallMessage, Message
+from lmclient.chat_completion.message import FunctionCallMessage, Message
 from lmclient.types import FunctionJsonSchema
 
 P = ParamSpec('P')
 T = TypeVar('T')
+
+
+def get_json_schema(function: Callable) -> FunctionJsonSchema:
+    function_name = function.__name__
+    docstring = parse(function.__doc__ or '')
+    parameters = TypeAdapter(function).json_schema()
+    for param in docstring.params:
+        if (arg_name := param.arg_name) in parameters['properties'] and (description := param.description):
+            parameters['properties'][arg_name]['description'] = description
+    parameters['required'] = sorted(k for k, v in parameters['properties'].items() if 'default' not in v)
+    recusive_remove(parameters, 'additionalProperties')
+    recusive_remove(parameters, 'title')
+    json_schema: FunctionJsonSchema = {
+        'name': function_name,
+        'description': docstring.short_description or '',
+        'parameters': parameters,
+    }
+    return json_schema
 
 
 class function(Generic[P, T]):  # noqa: N801
@@ -34,20 +52,7 @@ class function(Generic[P, T]):  # noqa: N801
 
     def __init__(self, function: Callable[P, T]) -> None:
         self.function: Callable[P, T] = validate_call(function)
-        self.name = self.function.__name__
-        self.docstring = parse(self.function.__doc__ or '')
-        parameters = TypeAdapter(function).json_schema()
-        for param in self.docstring.params:
-            if (name := param.arg_name) in parameters['properties'] and (description := param.description):
-                parameters['properties'][name]['description'] = description
-        parameters['required'] = sorted(k for k, v in parameters['properties'].items() if 'default' not in v)
-        recusive_remove(parameters, 'additionalProperties')
-        recusive_remove(parameters, 'title')
-        self.json_schema: FunctionJsonSchema = {
-            'name': self.name,
-            'description': self.docstring.short_description or '',
-            'parameters': parameters,
-        }
+        self.json_schema = get_json_schema(function)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.function(*args, **kwargs)

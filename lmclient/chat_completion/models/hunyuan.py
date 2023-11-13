@@ -8,13 +8,24 @@ import time
 import uuid
 from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import BaseModel
 from typing_extensions import Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
-from lmclient.message import Message, Messages, TextMessage
-from lmclient.model_output import FinishStream
-from lmclient.models.http import ChatModelOutput, HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs, Stream
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import Probability, Temperature
 
 
@@ -23,22 +34,25 @@ class HunyuanMessage(TypedDict):
     content: str
 
 
-class HunyuanChatParameters(BaseModel):
+class HunyuanChatParameters(ModelParameters):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
 
 
 def convert_to_hunyuan_message(message: Message) -> HunyuanMessage:
-    if not isinstance(message, TextMessage):
-        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
+    if isinstance(message, UserMessage):
+        return {
+            'role': 'user',
+            'content': message.content,
+        }
 
-    if message.role not in ('assistant', 'user'):
-        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
+    if isinstance(message, AssistantMessage):
+        return {
+            'role': 'assistant',
+            'content': message.content,
+        }
 
-    return {
-        'role': message.role,
-        'content': message.content,
-    }
+    raise MessageTypeError(message, (UserMessage, AssistantMessage))
 
 
 class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
@@ -108,11 +122,11 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         return Stream(delta=message['delta']['content'], control='continue')
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         if response.get('error'):
             raise UnexpectedResponseError(response)
-        messages = [TextMessage(role='assistant', content=response['choices'][0]['messages']['content'])]
-        return ChatModelOutput(
+        messages = [AssistantMessage(content=response['choices'][0]['messages']['content'])]
+        return ChatCompletionModelOutput(
             chat_model_id=self.model_id,
             messages=messages,
             finish_reason=response['choices'][0]['finish_reason'],

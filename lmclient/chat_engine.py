@@ -3,28 +3,31 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Generic, List, Literal, TypedDict, TypeVar, Union
 
-from pydantic import BaseModel
 from typing_extensions import Self, Unpack
 
-from lmclient.exceptions import MessageTypeError
-from lmclient.function import function
-from lmclient.message import (
+from lmclient.chat_completion import ChatCompletionModel, ChatCompletionModelOutput, ModelParameters, load_from_model_id
+from lmclient.chat_completion.message import (
+    AssistantMessage,
     FunctionCall,
     FunctionCallMessage,
+    FunctionMessage,
     Message,
-    TextMessage,
+    MessageTypeError,
+    ToolCall,
+    ToolCallsMessage,
+    ToolMessage,
+    UserMessage,
 )
-from lmclient.model_output import ChatModelOutput
-from lmclient.models import BaseChatModel, load_from_model_id
+from lmclient.function import function
 from lmclient.printer import Printer, SimplePrinter
 
-P = TypeVar('P', bound=BaseModel)
+P = TypeVar('P', bound=ModelParameters)
 
 
 class ChatEngineKwargs(TypedDict, total=False):
     functions: Union[List[function], dict[str, Callable], None]
-    function_call_raise_error: bool
-    max_function_calls_per_turn: int
+    call_raise_error: bool
+    max_calls_per_turn: int
 
 
 class ChatEngine(Generic[P]):
@@ -47,10 +50,10 @@ class ChatEngine(Generic[P]):
 
     def __init__(
         self,
-        chat_model: BaseChatModel[P],
+        chat_model: ChatCompletionModel[P],
         functions: Union[List[function], dict[str, Callable], None] = None,
-        function_call_raise_error: bool = False,
-        max_function_calls_per_turn: int = 5,
+        call_raise_error: bool = False,
+        max_calls_per_turn: int = 5,
         stream: bool | Literal['auto'] = 'auto',
         printer: Printer | Literal['auto'] | None = 'auto',
     ) -> None:
@@ -61,14 +64,14 @@ class ChatEngine(Generic[P]):
             for i in functions:
                 if not isinstance(i, function):
                     raise TypeError(f'Invalid function type: {type(i)}')
-                self._function_map[i.name] = i
+                self._function_map[i.json_schema['name']] = i
         elif isinstance(functions, dict):
             self._function_map = functions
         else:
             self._function_map = {}
 
-        self.function_call_raise_error = function_call_raise_error
-        self.max_function_calls_per_turn = max_function_calls_per_turn
+        self.call_raise_error = call_raise_error
+        self.max_calls_per_turn = max_calls_per_turn
 
         if stream == 'auto':
             self.stream = not bool(self._function_map)
@@ -83,8 +86,8 @@ class ChatEngine(Generic[P]):
             self.printer = printer
 
         self.history: list[Message] = []
-        self.model_ouptuts: list[ChatModelOutput[P]] = []
-        self._function_call_count = 0
+        self.model_ouptuts: list[ChatCompletionModelOutput[P]] = []
+        self._call_count = 0
 
     @classmethod
     def from_model_id(cls, model_id: str, **kwargs: Unpack[ChatEngineKwargs]) -> Self:
@@ -92,7 +95,7 @@ class ChatEngine(Generic[P]):
         return cls(chat_model, **kwargs)
 
     @property
-    def chat_model(self) -> BaseChatModel[P]:
+    def chat_model(self) -> ChatCompletionModel[P]:
         return self._chat_model
 
     @property
@@ -100,75 +103,107 @@ class ChatEngine(Generic[P]):
         return self.printer is not None
 
     def chat(self, user_input: str, **override_parameters: Any) -> str:
-        self._function_call_count = 0
+        self._call_count = 0
 
-        user_input_message = TextMessage(role='user', content=user_input)
+        user_input_message = UserMessage(content=user_input)
         self.history.append(user_input_message)
         if self.printer:
             self.printer.print_message(user_input_message)
 
-        if self.stream:
-            model_output = self._stream_chat_helper(**override_parameters)
-            if model_output is None:
-                raise RuntimeError('Stream finished unexpectedly.')
-        else:
-            model_output = self._chat_model.chat_completion(self.history, **override_parameters)
-        self.handle_model_output(model_output)
+        while True:
+            if self.stream:
+                model_output = self._stream_chat_helper(**override_parameters)
+            else:
+                model_output = self._chat_model.completion(self.history, **override_parameters)
+            self.handle_model_output(model_output)
+            if isinstance(model_output.last_message, AssistantMessage):
+                return model_output.reply
 
-        if isinstance(model_output.last_message, TextMessage):
-            return model_output.last_message.content
+    def handle_model_output(self, model_output: ChatCompletionModelOutput, **override_parameters: Any) -> None:
+        if not model_output.last_message:
+            raise RuntimeError('messages in model output is empty.', model_output.model_dump())
+
+        self.model_ouptuts.append(model_output)
+        self.history.extend(model_output.messages)
+        if self.printer:
+            for message in model_output.messages:
+                if self.stream and message.role == 'assistant':
+                    continue
+                self.printer.print_message(message)
 
         if isinstance(model_output.last_message, FunctionCallMessage):
+            self._call_count += 1
+            if self._call_count > self.max_calls_per_turn:
+                raise RuntimeError('Maximum number of function calls reached.')
             function_call = model_output.last_message.content
-            return self._recursive_function_call(function_call, **override_parameters)
+            self._handle_function_call(function_call)
 
-        raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
+        if isinstance(model_output.last_message, ToolCallsMessage):
+            self._call_count += 1
+            if self._call_count > self.max_calls_per_turn:
+                raise RuntimeError('Maximum number of tool calls reached.')
+            tool_calls = model_output.last_message.content
+            self._handle_tool_calls(tool_calls, **override_parameters)
 
-    def _stream_chat_helper(self, **override_parameters: Any) -> ChatModelOutput[P] | None:
-        for stream_output in self._chat_model.stream_chat_completion(self.history, **override_parameters):
+    def _handle_function_call(self, function_call: FunctionCall) -> None:
+        function_output = self.run_function_call(function_call)
+        function_message = FunctionMessage(
+            role='function', name=function_call.name, content=json.dumps(function_output, ensure_ascii=False)
+        )
+        self.history.append(function_message)
+        if self.printer:
+            self.printer.print_message(function_message)
+
+    def _handle_tool_calls(self, tool_calls: List[ToolCall], **override_parameters: Any) -> None:
+        tool_messages: list[ToolMessage] = []
+        for tool_call in tool_calls:
+            funtion_output = self.run_function_call(tool_call.function)
+            tool_message = ToolMessage(
+                tool_call_id=tool_call.id, name=tool_call.function.name, content=json.dumps(funtion_output, ensure_ascii=False)
+            )
+            tool_messages.append(tool_message)
+        self.history.extend(tool_messages)
+        if self.printer:
+            for message in tool_messages:
+                self.printer.print_message(message)
+
+    def _stream_chat_helper(self, **override_parameters: Any) -> ChatCompletionModelOutput[P]:
+        for stream_output in self._chat_model.stream_completion(self.history, **override_parameters):
             if self.printer:
                 self.printer.print_stream(stream_output.stream)
             if stream_output.is_finish:
                 return stream_output
-        return None
+        raise RuntimeError('Stream finished unexpectedly.')
 
     async def async_chat(self, user_input: str, **override_parameters: Any) -> str | None:
-        self._function_call_count = 0
+        self._call_count = 0
 
-        user_input_message = TextMessage(role='user', content=user_input)
+        user_input_message = UserMessage(content=user_input)
         self.history.append(user_input_message)
         if self.printer:
             self.printer.print_message(user_input_message)
 
-        if self.stream:
-            model_output = await self._async_stream_chat_helper(**override_parameters)
-            if model_output is None:
-                raise RuntimeError('Stream finished unexpectedly.')
-        else:
-            model_output = await self._chat_model.async_chat_completion(self.history, **override_parameters)
-        self.handle_model_output(model_output)
+        while True:
+            if self.stream:
+                model_output = await self._async_stream_chat_helper(**override_parameters)
+            else:
+                model_output = await self._chat_model.async_completion(self.history, **override_parameters)
+            self.handle_model_output(model_output)
+            if isinstance(model_output.last_message, AssistantMessage):
+                return model_output.reply
 
-        if isinstance(model_output.last_message, TextMessage):
-            return model_output.last_message.content
-
-        if isinstance(model_output.last_message, FunctionCallMessage):
-            function_call = model_output.last_message.content
-            return await self._async_recursive_function_call(function_call, **override_parameters)
-
-        raise RuntimeError(f'Invalid message type: {type(model_output.last_message)}')
-
-    async def _async_stream_chat_helper(self, **kwargs: Any) -> ChatModelOutput[P] | None:
-        async for stream_output in self._chat_model.async_stream_chat_completion(self.history, **kwargs):
+    async def _async_stream_chat_helper(self, **kwargs: Any) -> ChatCompletionModelOutput[P]:
+        async for stream_output in self._chat_model.async_stream_completion(self.history, **kwargs):
             if self.printer:
                 self.printer.print_stream(stream_output.stream)
             if stream_output.is_finish:
                 return stream_output
-        return None
+        raise RuntimeError('Stream finished unexpectedly.')
 
     def run_function_call(self, function_call: FunctionCall) -> Any | str:
         function = self._function_map.get(function_call.name)
         if function is None:
-            if self.function_call_raise_error:
+            if self.call_raise_error:
                 raise ValueError(f'Function {function_call.name} not found')
 
             return 'Function not found, please try another function.'
@@ -177,73 +212,37 @@ class ChatEngine(Generic[P]):
             arguments = json.loads(function_call.arguments, strict=False)
             return function(**arguments)
         except Exception as e:
-            if self.function_call_raise_error:
+            if self.call_raise_error:
                 raise
 
             return str(e)
 
-    def _recursive_function_call(self, function_call: FunctionCall, **override_parameters: Any) -> str:
-        function_output = self.run_function_call(function_call)
-        function_message = TextMessage(
-            role='function', name=function_call.name, content=json.dumps(function_output, ensure_ascii=False)
-        )
-        self.history.append(function_message)
-        if self.printer:
-            self.printer.print_message(function_message)
-
-        model_output = self._chat_model.chat_completion(self.history, **override_parameters)
-        self.handle_model_output(model_output)
-
-        if not model_output.last_message:
-            raise RuntimeError('messages in model output is empty.', model_output.model_dump())
-
-        if isinstance(model_output.last_message, TextMessage):
-            return model_output.last_message.content
-
-        if isinstance(model_output.last_message, FunctionCallMessage):
-            self._function_call_count += 1
-            if self._function_call_count > self.max_function_calls_per_turn:
-                raise RuntimeError('Maximum number of function calls reached.')
-            function_call = model_output.last_message.content
-            return self._recursive_function_call(function_call, **override_parameters)
-
-        raise MessageTypeError(model_output.last_message, allowed_message_type=(TextMessage, FunctionCallMessage))
-
     async def _async_recursive_function_call(self, function_call: FunctionCall, **override_parameters: Any) -> str:
         function_output = self.run_function_call(function_call)
-        function_message = TextMessage(
+        function_message = FunctionMessage(
             role='function', name=function_call.name, content=json.dumps(function_output, ensure_ascii=False)
         )
         self.history.append(function_message)
         if self.printer:
             self.printer.print_message(function_message)
 
-        model_output = await self._chat_model.async_chat_completion(self.history, **override_parameters)
+        model_output = await self._chat_model.async_completion(self.history, **override_parameters)
         self.handle_model_output(model_output)
 
         if not model_output.last_message:
             raise RuntimeError('messages in model output is empty.', model_output.model_dump())
 
-        if isinstance(model_output.last_message, TextMessage):
+        if isinstance(model_output.last_message, AssistantMessage):
             return model_output.last_message.content
 
         if isinstance(model_output.last_message, FunctionCallMessage):
-            self._function_call_count += 1
-            if self._function_call_count > self.max_function_calls_per_turn:
+            self._call_count += 1
+            if self._call_count > self.max_calls_per_turn:
                 raise RuntimeError('Maximum number of function calls reached.')
             function_call = model_output.last_message.content
             return await self._async_recursive_function_call(function_call, **override_parameters)
 
-        raise MessageTypeError(model_output.last_message, allowed_message_type=(TextMessage, FunctionCallMessage))
-
-    def handle_model_output(self, model_output: ChatModelOutput) -> None:
-        self.model_ouptuts.append(model_output)
-        self.history.extend(model_output.messages)
-        if self.printer:
-            for message in model_output.messages:
-                if self.stream and message.role == 'assistant':
-                    continue
-                self.printer.print_message(message)
+        raise MessageTypeError(model_output.last_message, allowed_message_type=(AssistantMessage, FunctionCallMessage))
 
     def reset(self) -> None:
         self.history.clear()

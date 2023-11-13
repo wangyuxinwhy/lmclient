@@ -5,10 +5,10 @@ from typing import Any, ClassVar
 
 from typing_extensions import Self, Unpack, override
 
-from lmclient.message import Messages
-from lmclient.model_output import ChatModelOutput, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
-from lmclient.models.openai import (
+from lmclient.chat_completion.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.message import Messages
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, Stream
+from lmclient.chat_completion.models.openai import (
     OpenAIChatParameters,
     convert_to_openai_message,
     parse_openai_model_reponse,
@@ -41,11 +41,11 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         openai_messages = [convert_to_openai_message(message) for message in messages]
         if self.system_prompt:
             openai_messages.insert(0, {'role': 'system', 'content': self.system_prompt})
-        parameters_dict = parameters.model_dump(exclude_defaults=True)
+
         json_data = {
             'model': self.model,
             'messages': openai_messages,
-            **parameters_dict,
+            **parameters.custom_model_dump(),
         }
         headers = {
             'api-key': self.api_key,
@@ -57,18 +57,16 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         }
 
     @override
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
+        return parse_openai_model_reponse(response)
+
+    @override
     def _get_stream_request_parameters(self, messages: Messages, parameters: OpenAIChatParameters) -> HttpxPostKwargs:
-        http_parameters = self._get_request_parameters(messages, parameters)
-        http_parameters['json']['stream'] = True
-        return http_parameters
+        raise NotImplementedError('Azure does not support streaming')
 
     @override
     def _parse_stream_response(self, response: HttpResponse) -> Stream:
         raise NotImplementedError('Azure does not support streaming')
-
-    @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
-        return parse_openai_model_reponse(response)
 
     @property
     @override

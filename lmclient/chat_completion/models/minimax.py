@@ -3,13 +3,25 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import BaseModel, Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, field_validator
 from typing_extensions import Annotated, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
-from lmclient.message import Message, Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, FinishStream, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import Probability, Temperature
 
 
@@ -23,7 +35,7 @@ class RoleMeta(TypedDict):
     bot_name: str
 
 
-class MinimaxChatParameters(BaseModel):
+class MinimaxChatParameters(ModelParameters):
     prompt: str = 'MM智能助理是一款由MiniMax自研的，没有调用其他产品的接口的大型语言模型。MiniMax是一家中国科技公司，一直致力于进行大模型相关的研究。'
     role_meta: RoleMeta = {'user_name': '用户', 'bot_name': 'MM智能助理'}
     beam_width: Optional[Annotated[int, Field(ge=1, le=4)]] = None
@@ -42,22 +54,19 @@ class MinimaxChatParameters(BaseModel):
 
 
 def convert_to_minimax_message(message: Message) -> MinimaxMessage:
-    if not isinstance(message, TextMessage):
-        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
+    if isinstance(message, UserMessage):
+        return {
+            'sender_type': 'USER',
+            'text': message.content,
+        }
 
-    if message.role not in ('assistant', 'user'):
-        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
-
-    if message.role == 'assistant':
+    if isinstance(message, AssistantMessage):
         return {
             'sender_type': 'BOT',
             'text': message.content,
         }
 
-    return {
-        'sender_type': 'USER',
-        'text': message.content,
-    }
+    raise MessageTypeError(message, (UserMessage, AssistantMessage))
 
 
 class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
@@ -107,16 +116,16 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         try:
-            messages = [TextMessage(role='assistant', content=response['choices'][0]['text'])]
-            return ChatModelOutput(
+            messages = [AssistantMessage(content=response['choices'][0]['text'])]
+            return ChatCompletionModelOutput(
                 chat_model_id=self.model_id,
                 messages=messages,
                 finish_reason=response['choices'][0]['finish_reason'],
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage']),
-                extra_info={
+                extra={
                     'logprobes': response['choices'][0]['logprobes'],
                     'input_sensitive': False,
                     'output_sensitive': False,
