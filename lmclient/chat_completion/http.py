@@ -45,8 +45,8 @@ class HttpChatModelInitKwargs(TypedDict, total=False):
 class HttpxPostKwargs(TypedDict, total=False):
     url: Required[str]
     json: Required[Any]
+    headers: Required[Headers]
     params: QueryParams
-    headers: Headers
     timeout: Optional[int]
 
 
@@ -59,11 +59,7 @@ class UnexpectedResponseError(Exception):
     """
 
     def __init__(self, response: dict, *args: Any) -> None:
-        try:
-            message = json.dumps(response, indent=4, ensure_ascii=False)
-        except TypeError:
-            message = str(response)
-        super().__init__(message, *args)
+        super().__init__(response, *args)
 
 
 class HttpChatModel(ChatCompletionModel[P], ABC):

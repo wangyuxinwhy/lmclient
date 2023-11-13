@@ -196,7 +196,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
                 delta=response['result'],
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage']),
-                extra_info={
+                extra={
                     'is_truncated': response['is_truncated'],
                     'need_clear_history': response['need_clear_history'],
                 },
