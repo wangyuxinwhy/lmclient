@@ -32,7 +32,6 @@ client = CompletionEngine(model, async_capacity=5, max_requests_per_minute=20)
 prompts = [
     'Hello, my name is',
     'can you please tell me your name?',
-    [{'role': 'user', 'content': 'hello, who are you?'}],
     'what is your name?',
 ]
 outputs = client.async_run(prompts=prompts)

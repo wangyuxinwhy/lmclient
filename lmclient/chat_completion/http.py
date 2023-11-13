@@ -12,13 +12,18 @@ from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 from typing_extensions import Required, TypedDict, override
 
-from lmclient.exceptions import UnexpectedResponseError
-from lmclient.message import Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, ChatModelStreamOutput, FinishStream, Stream
-from lmclient.models.base import BaseChatModel
+from lmclient.chat_completion.base import ChatCompletionModel
+from lmclient.chat_completion.message import AssistantMessage, Messages
+from lmclient.chat_completion.model_output import (
+    ChatCompletionModelOutput,
+    ChatCompletionModelStreamOutput,
+    FinishStream,
+    Stream,
+)
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import PrimitiveData
 
-P = TypeVar('P', bound=BaseModel)
+P = TypeVar('P', bound=ModelParameters)
 HttpResponse = Dict[str, Any]
 QueryParams = Mapping[str, Union[PrimitiveData, Sequence[PrimitiveData]]]
 Headers = Mapping[str, str]
@@ -45,7 +50,23 @@ class HttpxPostKwargs(TypedDict, total=False):
     timeout: Optional[int]
 
 
-class HttpChatModel(BaseChatModel[P], ABC):
+class UnexpectedResponseError(Exception):
+    """
+    Exception raised when an unexpected response is received from the server.
+
+    Attributes:
+        response (dict): The response from the server.
+    """
+
+    def __init__(self, response: dict, *args: Any) -> None:
+        try:
+            message = json.dumps(response, indent=4, ensure_ascii=False)
+        except TypeError:
+            message = str(response)
+        super().__init__(message, *args)
+
+
+class HttpChatModel(ChatCompletionModel[P], ABC):
     model_type = 'http'
     parse_stream_strategy: ClassVar[Literal['sse', 'basic']] = 'sse'
 
@@ -69,7 +90,7 @@ class HttpChatModel(BaseChatModel[P], ABC):
         ...
 
     @abstractmethod
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         ...
 
     @abstractmethod
@@ -80,46 +101,46 @@ class HttpChatModel(BaseChatModel[P], ABC):
     def _parse_stream_response(self, response: HttpResponse) -> Stream:
         ...
 
-    def _chat_completion_without_retry(self, messages: Messages, parameters: P) -> ChatModelOutput:
+    def _completion_without_retry(self, messages: Messages, parameters: P) -> ChatCompletionModelOutput:
         with httpx.Client(proxies=self.proxies) as client:
             http_parameters = self._get_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
             http_response = client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_output = self._parse_reponse(http_response.json())
-        model_output.extra_info['http_response'] = http_response.json()
+        model_output.extra['http_response'] = http_response.json()
         return model_output
 
-    async def _async_chat_completion_without_retry(self, messages: Messages, parameters: P) -> ChatModelOutput:
+    async def _async_completion_without_retry(self, messages: Messages, parameters: P) -> ChatCompletionModelOutput:
         async with httpx.AsyncClient(proxies=self.proxies) as client:
             http_parameters = self._get_request_parameters(messages, parameters)
             http_parameters.update({'timeout': self.timeout})
             http_response = await client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_output = self._parse_reponse(http_response.json())
-        model_output.extra_info['http_response'] = http_response.json()
+        model_output.extra['http_response'] = http_response.json()
         return model_output
 
     @override
-    def _chat_completion(self, messages: Messages, parameters: P) -> ChatModelOutput:
+    def _completion(self, messages: Messages, parameters: P) -> ChatCompletionModelOutput:
         if self.retry_strategy is None:
-            return self._chat_completion_without_retry(messages, parameters)
+            return self._completion_without_retry(messages, parameters)
 
         wait = wait_random_exponential(min=self.retry_strategy.min_wait_seconds, max=self.retry_strategy.max_wait_seconds)
         stop = stop_after_attempt(self.retry_strategy.max_attempt)
-        return retry(wait=wait, stop=stop)(self._chat_completion_without_retry)(messages, parameters)
+        return retry(wait=wait, stop=stop)(self._completion_without_retry)(messages, parameters)
 
     @override
-    async def _async_chat_completion(self, messages: Messages, parameters: P) -> ChatModelOutput:
+    async def _async_completion(self, messages: Messages, parameters: P) -> ChatCompletionModelOutput:
         if self.retry_strategy is None:
-            return await self._async_chat_completion_without_retry(messages, parameters)
+            return await self._async_completion_without_retry(messages, parameters)
 
         wait = wait_random_exponential(min=self.retry_strategy.min_wait_seconds, max=self.retry_strategy.max_wait_seconds)
         stop = stop_after_attempt(self.retry_strategy.max_attempt)
-        return await retry(wait=wait, stop=stop)(self._async_chat_completion_without_retry)(messages, parameters)
+        return await retry(wait=wait, stop=stop)(self._async_completion_without_retry)(messages, parameters)
 
     @override
-    def _stream_chat_completion(self, messages: Messages, parameters: P) -> Generator[ChatModelStreamOutput, None, None]:
+    def _stream_completion(self, messages: Messages, parameters: P) -> Generator[ChatCompletionModelStreamOutput, None, None]:
         if self.parse_stream_strategy == 'sse':
             stream_data_generator = self._generate_data_from_sse_stream(messages, parameters)
         else:
@@ -140,9 +161,9 @@ class HttpChatModel(BaseChatModel[P], ABC):
 
             if not start:
                 start_stream = Stream(delta='', control='start')
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
+                    messages=[AssistantMessage(content=reply)],
                     stream=start_stream,
                 )
                 if stream.control == 'start':
@@ -153,10 +174,10 @@ class HttpChatModel(BaseChatModel[P], ABC):
 
             if isinstance(stream, FinishStream):
                 finish = True
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
-                    extra_info={'http_response': stream_response},
+                    messages=[AssistantMessage(content=reply)],
+                    extra={'http_response': stream_response},
                     stream=stream,
                     finish_reason=stream.finish_reason,
                     usage=stream.usage,
@@ -164,10 +185,10 @@ class HttpChatModel(BaseChatModel[P], ABC):
                 )
                 break
             else:
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
-                    extra_info={'http_response': stream_response},
+                    messages=[AssistantMessage(content=reply)],
+                    extra={'http_response': stream_response},
                     stream=stream,
                 )
 
@@ -197,9 +218,9 @@ class HttpChatModel(BaseChatModel[P], ABC):
                 yield line
 
     @override
-    async def _async_stream_chat_completion(
+    async def _async_stream_completion(
         self, messages: Messages, parameters: P
-    ) -> AsyncGenerator[ChatModelStreamOutput, None]:
+    ) -> AsyncGenerator[ChatCompletionModelStreamOutput, None]:
         if self.parse_stream_strategy == 'sse':
             stream_data_generator = self._async_generate_data_from_sse_stream(messages, parameters)
         else:
@@ -219,9 +240,9 @@ class HttpChatModel(BaseChatModel[P], ABC):
 
             if not start:
                 start_stream = Stream(delta='', control='start')
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
+                    messages=[AssistantMessage(content=reply)],
                     stream=start_stream,
                 )
                 if stream.control == 'start':
@@ -232,10 +253,10 @@ class HttpChatModel(BaseChatModel[P], ABC):
 
             if isinstance(stream, FinishStream):
                 finish = True
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
-                    extra_info={'http_response': stream_response},
+                    messages=[AssistantMessage(content=reply)],
+                    extra={'http_response': stream_response},
                     stream=stream,
                     finish_reason=stream.finish_reason,
                     usage=stream.usage,
@@ -243,10 +264,10 @@ class HttpChatModel(BaseChatModel[P], ABC):
                 )
                 break
             else:
-                yield ChatModelStreamOutput(
+                yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
-                    messages=[TextMessage(role='assistant', content=reply)],
-                    extra_info={'http_response': stream_response},
+                    messages=[AssistantMessage(content=reply)],
+                    extra={'http_response': stream_response},
                     stream=stream,
                 )
 

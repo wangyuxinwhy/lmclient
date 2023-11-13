@@ -4,8 +4,16 @@ from typing import Protocol
 
 import rich
 
-from lmclient.message import FunctionCallMessage, Message, TextMessage
-from lmclient.model_output import Stream
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    FunctionCallMessage,
+    FunctionMessage,
+    Message,
+    ToolCallsMessage,
+    ToolMessage,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import Stream
 
 
 class Printer(Protocol):
@@ -30,10 +38,15 @@ class SimplePrinter(Printer):
         self.interval = interval
 
     def print_message(self, message: Message) -> None:
-        if isinstance(message, TextMessage):
+        if isinstance(message, (UserMessage, AssistantMessage, FunctionMessage, ToolMessage)):
             print(f'{message.role}: {message.content}')
         elif isinstance(message, FunctionCallMessage):
             print(f'Function call: {message.content.name}\nArguments: {message.content.arguments}')
+        elif isinstance(message, ToolCallsMessage):
+            for tool_call in message.content:
+                print(
+                    f'Tool call: {tool_call.id}\nFunction: {tool_call.function.name}\nArguments: {tool_call.function.arguments}'
+                )
         else:
             raise TypeError(f'Invalid message type: {type(message)}')
 
@@ -64,11 +77,19 @@ class RichPrinter(Printer):
         self.interval = interval
 
     def print_message(self, message: Message) -> None:
-        if isinstance(message, TextMessage):
-            if message.role == 'user':
-                rich.print(f'🤠 : [green]{message.content}[/green]')
+        if isinstance(message, UserMessage):
+            rich.print(f'🤠 : [green]{message.content}[/green]')
+        elif isinstance(message, AssistantMessage):
+            rich.print(f'🤖 : {message.content}')
         elif isinstance(message, FunctionCallMessage):
-            print(f'🤖 : [Function call] {message.content.name}\nArguments: {message.content.arguments}')
+            rich.print(f'🔀 : [blue] Name:{message.content.name}\nArguments: {message.content.arguments}[/blue]')
+        elif isinstance(message, (FunctionMessage, ToolMessage)):
+            rich.print(f'🔀 : [blue]{message.content}[/blue]')
+        elif isinstance(message, ToolCallsMessage):
+            for tool_call in message.content:
+                rich.print(
+                    f'🔀 : [blue]Tool call: {tool_call.id}\nFunction: {tool_call.function.name}\nArguments: {tool_call.function.arguments}[/blue]'
+                )
         else:
             raise TypeError(f'Invalid message type: {type(message)}')
 

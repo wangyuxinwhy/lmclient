@@ -1,7 +1,4 @@
-from lmclient.chat_engine import ChatEngine
-from lmclient.completion_engine import CompletionEngine
-from lmclient.function import function
-from lmclient.models import (
+from lmclient.chat_completion import (
     AzureChat,
     BaichuanChat,
     BaichuanChatParameters,
@@ -21,6 +18,9 @@ from lmclient.models import (
     ZhiPuChatParameters,
     load_from_model_id,
 )
+from lmclient.chat_engine import ChatEngine
+from lmclient.completion_engine import CompletionEngine
+from lmclient.function import function
 from lmclient.version import __version__
 
 __all__ = [

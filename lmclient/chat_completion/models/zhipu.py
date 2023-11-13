@@ -6,16 +6,27 @@ from typing import Any, ClassVar, Literal, Optional, TypeVar
 
 import cachetools.func  # type: ignore
 import jwt
-from pydantic import BaseModel
 from typing_extensions import NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
-from lmclient.message import Message, Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, FinishStream, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import Probability, Temperature
 
-P = TypeVar('P', bound=BaseModel)
+P = TypeVar('P', bound=ModelParameters)
 API_TOKEN_TTL_SECONDS = 3 * 60
 CACHE_TTL_SECONDS = API_TOKEN_TTL_SECONDS - 30
 
@@ -25,7 +36,7 @@ class ZhiPuRef(TypedDict):
     search_query: NotRequired[str]
 
 
-class ZhiPuChatParameters(BaseModel):
+class ZhiPuChatParameters(ModelParameters):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     request_id: Optional[str] = None
@@ -39,7 +50,7 @@ class ZhiPuMeta(TypedDict):
     user_name: str
 
 
-class ZhiPuCharacterChatParameters(BaseModel):
+class ZhiPuCharacterChatParameters(ModelParameters):
     meta: ZhiPuMeta = {
         'user_info': '我是陆星辰，是一个男性，是一位知名导演，也是苏梦远的合作导演。',
         'bot_info': '苏梦远，本名苏远心，是一位当红的国内女歌手及演员。',
@@ -55,16 +66,19 @@ class ZhiPuMessage(TypedDict):
 
 
 def convert_to_zhipu_message(message: Message) -> ZhiPuMessage:
-    if not isinstance(message, TextMessage):
-        raise MessageTypeError(message, allowed_message_type=(TextMessage,))
-    role = message.role
-    if role not in ('assistant', 'user'):
-        raise MessageValueError(message, 'invalid role, only "user" and "assistant" are allowed')
+    if isinstance(message, UserMessage):
+        return {
+            'role': 'user',
+            'content': message.content,
+        }
 
-    return {
-        'role': role,
-        'content': message.content,
-    }
+    if isinstance(message, AssistantMessage):
+        return {
+            'role': 'assistant',
+            'content': message.content,
+        }
+
+    raise MessageTypeError(message, (UserMessage, AssistantMessage))
 
 
 @cachetools.func.ttl_cache(maxsize=10, ttl=CACHE_TTL_SECONDS)
@@ -119,11 +133,11 @@ class BaseZhiPuChat(HttpChatModel[P]):
         }
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         if response['success']:
             text = response['data']['choices'][0]['content']
-            messages = [TextMessage(role='assistant', content=text)]
-            return ChatModelOutput(
+            messages = [AssistantMessage(content=text)]
+            return ChatCompletionModelOutput(
                 chat_model_id=self.model_id,
                 messages=messages,
                 usage=response['data']['usage'],

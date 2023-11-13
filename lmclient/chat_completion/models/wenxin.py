@@ -2,17 +2,31 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
-from email.errors import MessageError
 from typing import Any, ClassVar, List, Literal, Optional
 
 import httpx
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import UnexpectedResponseError
-from lmclient.message import FunctionCall, FunctionCallMessage, Message, Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, FinishStream, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    FunctionCall,
+    FunctionCallMessage,
+    FunctionMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import JsonSchema, Probability, Temperature
 
 
@@ -38,8 +52,17 @@ class WenxinFunction(TypedDict):
 
 
 def convert_to_wenxin_message(message: Message) -> WenxinMessage:
-    if message.role == 'system':
-        raise MessageError(f'Invalid message role: {message.role}, only "user", "assistant" and "function" are allowed')
+    if isinstance(message, UserMessage):
+        return {
+            'role': 'user',
+            'content': message.content,
+        }
+
+    if isinstance(message, AssistantMessage):
+        return {
+            'role': 'assistant',
+            'content': message.content,
+        }
 
     if isinstance(message, FunctionCallMessage):
         return {
@@ -51,24 +74,17 @@ def convert_to_wenxin_message(message: Message) -> WenxinMessage:
             },
             'content': '',
         }
-    if isinstance(message, TextMessage):
-        if message.role == 'function':
-            if message.name is None:
-                raise MessageError(f'Function name is required, message: {message}')
-            return {
-                'role': message.role,
-                'name': message.name,
-                'content': message.content,
-            }
-
+    if isinstance(message, FunctionMessage):
         return {
             'role': message.role,
+            'name': message.name,
             'content': message.content,
         }
-    raise MessageError(f'Invalid message type: {type(message)}')
+
+    raise MessageTypeError(message, allowed_message_type=(UserMessage, AssistantMessage, FunctionMessage, FunctionCallMessage))
 
 
-class WenxinChatParameters(BaseModel):
+class WenxinChatParameters(ModelParameters):
     temperature: Optional[Temperature] = None
     top_p: Optional[Probability] = None
     functions: Optional[List[WenxinFunction]] = None
@@ -188,13 +204,12 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         return Stream(delta=response['result'], control='continue')
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         if response.get('error_msg'):
             raise UnexpectedResponseError(response)
         if response.get('function_call'):
             messages = [
                 FunctionCallMessage(
-                    role='assistant',
                     content=FunctionCall(
                         name=response['function_call']['name'],
                         arguments=response['function_call']['arguments'],
@@ -203,13 +218,13 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
                 )
             ]
         else:
-            messages = [TextMessage(role='assistant', content=response['result'])]
-        return ChatModelOutput(
+            messages = [AssistantMessage(content=response['result'])]
+        return ChatCompletionModelOutput(
             chat_model_id=self.model_id,
             messages=messages,
             usage=response['usage'],
             cost=self.calculate_cost(response['usage']),
-            extra_info={
+            extra={
                 'is_truncated': response['is_truncated'],
                 'need_clear_history': response['need_clear_history'],
             },

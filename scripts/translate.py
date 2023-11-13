@@ -8,8 +8,8 @@ from anyio import open_file
 from asyncer import runnify
 
 from lmclient import CompletionEngine
+from lmclient.chat_completion import load_from_model_id
 from lmclient.completion_engine import ErrorMode
-from lmclient.models import load_from_model_id
 
 
 def read_from_text_file(file: str | Path) -> list[str]:

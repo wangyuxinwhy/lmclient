@@ -3,13 +3,29 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.exceptions import MessageTypeError, MessageValueError, UnexpectedResponseError
-from lmclient.message import FunctionCall, FunctionCallMessage, Message, Messages, TextMessage
-from lmclient.model_output import ChatModelOutput, FinishStream, Stream
-from lmclient.models.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http import (
+    HttpChatModel,
+    HttpChatModelInitKwargs,
+    HttpResponse,
+    HttpxPostKwargs,
+    UnexpectedResponseError,
+)
+from lmclient.chat_completion.message import (
+    AssistantMessage,
+    FunctionCall,
+    FunctionCallMessage,
+    FunctionMessage,
+    Message,
+    Messages,
+    MessageTypeError,
+    MessageValueError,
+    UserMessage,
+)
+from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
+from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
@@ -42,7 +58,7 @@ class MinimaxProMessage(TypedDict):
     function_call: NotRequired[MinimaxFunctionCall]
 
 
-class MinimaxProChatParameters(BaseModel):
+class MinimaxProChatParameters(ModelParameters):
     reply_constraints: ReplyConstrainsDict = {'sender_type': 'BOT', 'sender_name': 'MM智能助理'}
     bot_setting: List[BotSettingDict] = [
         {
@@ -95,6 +111,20 @@ class MinimaxProChatParameters(BaseModel):
 def convert_to_minimax_pro_message(
     message: Message, default_bot_name: str | None = None, default_user_name: str = '用户'
 ) -> MinimaxProMessage:
+    if isinstance(message, UserMessage):
+        sender_name = message.name or default_user_name
+        return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message.content}
+
+    if isinstance(message, AssistantMessage):
+        sender_name = message.name or default_bot_name
+        if sender_name is None:
+            raise MessageValueError(message, 'bot name is required')
+        return {
+            'sender_type': 'BOT',
+            'sender_name': sender_name,
+            'text': message.content,
+        }
+
     if isinstance(message, FunctionCallMessage):
         sender_name = message.name or default_bot_name
         if sender_name is None:
@@ -108,29 +138,17 @@ def convert_to_minimax_pro_message(
                 'arguments': message.content.arguments,
             },
         }
-    if isinstance(message, TextMessage):
-        if message.role == 'assistant':
-            sender_name = message.name or default_bot_name
-            if sender_name is None:
-                raise MessageValueError(message, 'bot name is required')
-            return {
-                'sender_type': 'BOT',
-                'sender_name': sender_name,
-                'text': message.content,
-            }
-        if message.role == 'function':
-            if message.name is None:
-                raise MessageValueError(message, 'function name is required')
-            return {
-                'sender_type': 'FUNCTION',
-                'sender_name': message.name,
-                'text': message.content,
-            }
-        if message.role == 'user':
-            sender_name = message.name or default_user_name
-            return {'sender_type': 'USER', 'sender_name': sender_name, 'text': message.content}
-        raise MessageValueError(message, f'invalid message role: {message.role}')
-    raise MessageTypeError(message, allowed_message_type=(TextMessage, FunctionCallMessage))
+
+    if isinstance(message, FunctionMessage):
+        if message.name is None:
+            raise MessageValueError(message, 'function name is required')
+        return {
+            'sender_type': 'FUNCTION',
+            'sender_name': message.name,
+            'text': message.content,
+        }
+
+    raise MessageTypeError(message, allowed_message_type=(UserMessage, AssistantMessage, FunctionMessage, FunctionCallMessage))
 
 
 class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
@@ -184,19 +202,19 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         }
 
     @override
-    def _parse_reponse(self, response: HttpResponse) -> ChatModelOutput:
+    def _parse_reponse(self, response: HttpResponse) -> ChatCompletionModelOutput:
         try:
             messages = [self._convert_to_message(i) for i in response['choices'][0]['messages']]
             finish_reason = response['choices'][0]['finish_reason']
             num_web_search = sum([i for i in response['choices'][0]['messages'] if i['sender_name'] == 'plugin_web_search'])
 
-            return ChatModelOutput(
+            return ChatCompletionModelOutput(
                 chat_model_id=self.model_id,
                 messages=messages,
                 finish_reason=finish_reason,
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage'], num_web_search),
-                extra_info={
+                extra={
                     'input_sensitive': response['input_sensitive'],
                     'output_sensitive': response['output_sensitive'],
                 },
@@ -228,24 +246,27 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
 
     @staticmethod
     def _convert_to_message(message: MinimaxProMessage) -> Message:
-        role_map: dict[str, Literal['user', 'assistant', 'function']] = {
-            'USER': 'user',
-            'BOT': 'assistant',
-            'FUNCTION': 'function',
-        }
-
         if 'function_call' in message:
             return FunctionCallMessage(
-                role='assistant',
                 name=message['sender_name'],
                 content=FunctionCall(name=message['function_call']['name'], arguments=message['function_call']['arguments']),
             )
-
-        return TextMessage(
-            role=role_map[message['sender_type']],
-            name=message['sender_name'],
-            content=message['text'],
-        )
+        if message['sender_type'] == 'USER':
+            return UserMessage(
+                name=message['sender_name'],
+                content=message['text'],
+            )
+        if message['sender_type'] == 'BOT':
+            return AssistantMessage(
+                name=message['sender_name'],
+                content=message['text'],
+            )
+        if message['sender_type'] == 'FUNCTION':
+            return FunctionMessage(
+                name=message['sender_name'],
+                content=message['text'],
+            )
+        raise ValueError(f'unknown sender_type: {message["sender_type"]}')
 
     def calculate_cost(self, usage: dict[str, int], num_web_search: int = 0) -> float:
         return 0.015 * (usage['total_tokens'] / 1000) + (0.03 * num_web_search)

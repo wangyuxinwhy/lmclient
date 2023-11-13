@@ -16,15 +16,12 @@ from typing import (
 import anyio
 import asyncer
 import tqdm
-from pydantic import BaseModel
 from typing_extensions import Self, Unpack
 
-from lmclient.message import Prompt, Prompts
-from lmclient.model_output import ChatModelOutput
-from lmclient.models import BaseChatModel, load_from_model_id
-from lmclient.utils import ensure_messages
+from lmclient.chat_completion import ChatCompletionModel, ChatCompletionModelOutput, ModelParameters, load_from_model_id
+from lmclient.chat_completion.message import Prompt, Prompts, ensure_messages
 
-P = TypeVar('P', bound=BaseModel)
+P = TypeVar('P', bound=ModelParameters)
 ErrorMode = Literal['raise', 'ignore']
 ProgressBarMode = Literal['auto', 'never', 'always']
 
@@ -51,7 +48,7 @@ class CompletionEngine(Generic[P]):
 
     def __init__(
         self,
-        chat_model: BaseChatModel[P],
+        chat_model: ChatCompletionModel[P],
         async_capacity: int = 3,
         max_requests_per_minute: int = 20,
         error_mode: ErrorMode = 'raise',
@@ -69,7 +66,7 @@ class CompletionEngine(Generic[P]):
         chat_model = load_from_model_id(model_id)
         return cls(chat_model, **kwargs)
 
-    def run(self, prompts: Prompts, **kwargs: Any) -> Generator[ChatModelOutput, None, None]:
+    def run(self, prompts: Prompts, **kwargs: Any) -> Generator[ChatCompletionModelOutput, None, None]:
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
         for prompt in prompts:
             task_result = self._run_single_task(prompt=prompt, progress_bar=progress_bar, **kwargs)
@@ -81,7 +78,7 @@ class CompletionEngine(Generic[P]):
         prompt: Prompt,
         progress_bar: tqdm.tqdm[NoReturn],
         **kwargs: Any,
-    ) -> ChatModelOutput:
+    ) -> ChatCompletionModelOutput:
         messages = ensure_messages(prompt)
         sleep_time = self._calculate_sleep_time()
         if sleep_time > 0:
@@ -89,24 +86,24 @@ class CompletionEngine(Generic[P]):
         self._task_created_time_list.append(int(time.time()))
 
         try:
-            output = self.chat_model.chat_completion(prompt=messages, **kwargs)
+            output = self.chat_model.completion(prompt=messages, **kwargs)
         except Exception as e:
             if self.error_mode == 'raise':
                 raise
             if self.error_mode == 'ignore':
-                return ChatModelOutput(chat_model_id=self.chat_model.model_id, extra_info={'error': str(e)})
+                return ChatCompletionModelOutput(chat_model_id=self.chat_model.model_id, extra={'error': str(e)})
             raise ValueError(f'Unknown error mode: {self.error_mode}') from e
         else:
             progress_bar.update(1)
             return output
 
-    async def async_run(self, prompts: Prompts, **kwargs: Any) -> AsyncGenerator[ChatModelOutput, None]:
+    async def async_run(self, prompts: Prompts, **kwargs: Any) -> AsyncGenerator[ChatCompletionModelOutput, None]:
         limiter = anyio.CapacityLimiter(self.async_capacity)
         task_created_lock = anyio.Lock()
         progress_bar = self._get_progress_bar(num_tasks=len(prompts))
 
         async with asyncer.create_task_group() as task_group:
-            soon_values: list[asyncer.SoonValue[ChatModelOutput]] = []
+            soon_values: list[asyncer.SoonValue[ChatCompletionModelOutput]] = []
             soon_func = task_group.soonify(self._async_run_single_task)
             for prompt in prompts:
                 soon_value = soon_func(
@@ -131,7 +128,7 @@ class CompletionEngine(Generic[P]):
         task_created_lock: anyio.Lock,
         progress_bar: tqdm.tqdm[NoReturn],
         **kwargs: Any,
-    ) -> ChatModelOutput:
+    ) -> ChatCompletionModelOutput:
         messages = ensure_messages(prompt)
 
         async with limiter:
@@ -141,12 +138,12 @@ class CompletionEngine(Generic[P]):
                     if sleep_time > 0:
                         await anyio.sleep(sleep_time)
                     self._task_created_time_list.append(int(time.time()))
-                output = await self.chat_model.async_chat_completion(messages, **kwargs)
+                output = await self.chat_model.async_completion(messages, **kwargs)
             except Exception as e:
                 if self.error_mode == 'raise':
                     raise
                 if self.error_mode == 'ignore':
-                    return ChatModelOutput(chat_model_id=self.chat_model.model_id, extra_info={'error': str(e)})
+                    return ChatCompletionModelOutput(chat_model_id=self.chat_model.model_id, extra={'error': str(e)})
 
                 raise ValueError(f'Unknown error mode: {self.error_mode}') from e
             else:
