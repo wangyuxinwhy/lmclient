@@ -224,7 +224,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
             messages=messages,
             usage=response['usage'],
             cost=self.calculate_cost(response['usage']),
-            extra={
+            debug={
                 'is_truncated': response['is_truncated'],
                 'need_clear_history': response['need_clear_history'],
             },

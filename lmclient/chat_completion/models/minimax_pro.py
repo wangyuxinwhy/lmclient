@@ -214,7 +214,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
                 finish_reason=finish_reason,
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage'], num_web_search),
-                extra={
+                debug={
                     'input_sensitive': response['input_sensitive'],
                     'output_sensitive': response['output_sensitive'],
                 },

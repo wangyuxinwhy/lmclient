@@ -26,7 +26,7 @@ from lmclient.types import PrimitiveData
 P = TypeVar('P', bound=ModelParameters)
 HttpResponse = Dict[str, Any]
 QueryParams = Mapping[str, Union[PrimitiveData, Sequence[PrimitiveData]]]
-Headers = Mapping[str, str]
+Headers = Dict[str, str]
 logger = logging.getLogger(__name__)
 
 
@@ -104,7 +104,9 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
             http_response = client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_output = self._parse_reponse(http_response.json())
-        model_output.extra['http_response'] = http_response.json()
+        http_parameters['headers'].pop('Authorization', None)
+        model_output.debug['http_request'] = http_parameters
+        model_output.debug['http_response'] = http_response.json()
         return model_output
 
     async def _async_completion_without_retry(self, messages: Messages, parameters: P) -> ChatCompletionModelOutput:
@@ -114,7 +116,9 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
             http_response = await client.post(**http_parameters)  # type: ignore
         http_response.raise_for_status()
         model_output = self._parse_reponse(http_response.json())
-        model_output.extra['http_response'] = http_response.json()
+        http_parameters['headers'].pop('Authorization', None)
+        model_output.debug['http_request'] = http_parameters
+        model_output.debug['http_response'] = http_response.json()
         return model_output
 
     @override
@@ -137,10 +141,13 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
 
     @override
     def _stream_completion(self, messages: Messages, parameters: P) -> Generator[ChatCompletionModelStreamOutput, None, None]:
+        http_parameters = self._get_stream_request_parameters(messages, parameters)
+        http_parameters.update({'timeout': self.timeout})
+
         if self.parse_stream_strategy == 'sse':
-            stream_data_generator = self._generate_data_from_sse_stream(messages, parameters)
+            stream_data_generator = self._generate_data_from_sse_stream(http_parameters)
         else:
-            stream_data_generator = self._generate_data_from_basic_stream(messages, parameters)
+            stream_data_generator = self._generate_data_from_basic_stream(http_parameters)
 
         reply = ''
         start = False
@@ -170,10 +177,12 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
 
             if isinstance(stream, FinishStream):
                 finish = True
+                http_parameters['headers'].pop('Authorization', None)
+
                 yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
                     messages=[AssistantMessage(content=reply)],
-                    extra={'http_response': stream_response},
+                    debug={'http_response': stream_response, 'http_request': http_parameters},
                     stream=stream,
                     finish_reason=stream.finish_reason,
                     usage=stream.usage,
@@ -184,7 +193,6 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
                 yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
                     messages=[AssistantMessage(content=reply)],
-                    extra={'http_response': stream_response},
                     stream=stream,
                 )
 
@@ -198,17 +206,14 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
             stream_response = {'data': stream_data}
         return stream_response
 
-    def _generate_data_from_sse_stream(self, messages: Messages, parameters: P) -> Generator[str, None, None]:
-        with httpx.Client(proxies=self.proxies) as client:
-            http_parameters = self._get_stream_request_parameters(messages, parameters)
-            http_parameters.update({'timeout': self.timeout})
-            with connect_sse(client=client, method='POST', **http_parameters) as event_source:
-                for sse in event_source.iter_sse():
-                    yield sse.data
+    def _generate_data_from_sse_stream(self, http_parameters: HttpxPostKwargs) -> Generator[str, None, None]:
+        with httpx.Client(proxies=self.proxies) as client, connect_sse(
+            client=client, method='POST', **http_parameters
+        ) as source:
+            for sse in source.iter_sse():
+                yield sse.data
 
-    def _generate_data_from_basic_stream(self, messages: Messages, parameters: P) -> Generator[str, None, None]:
-        http_parameters = self._get_stream_request_parameters(messages, parameters)
-        http_parameters.update({'timeout': self.timeout})
+    def _generate_data_from_basic_stream(self, http_parameters: HttpxPostKwargs) -> Generator[str, None, None]:
         with httpx.Client(proxies=self.proxies) as client, client.stream('POST', **http_parameters) as source:
             for line in source.iter_lines():
                 yield line
@@ -217,10 +222,13 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
     async def _async_stream_completion(
         self, messages: Messages, parameters: P
     ) -> AsyncGenerator[ChatCompletionModelStreamOutput, None]:
+        http_parameters = self._get_stream_request_parameters(messages, parameters)
+        http_parameters.update({'timeout': self.timeout})
+
         if self.parse_stream_strategy == 'sse':
-            stream_data_generator = self._async_generate_data_from_sse_stream(messages, parameters)
+            stream_data_generator = self._async_generate_data_from_sse_stream(http_parameters)
         else:
-            stream_data_generator = self._async_generate_data_from_basic_stream(messages, parameters)
+            stream_data_generator = self._async_generate_data_from_basic_stream(http_parameters)
 
         reply = ''
         start = False
@@ -249,10 +257,12 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
 
             if isinstance(stream, FinishStream):
                 finish = True
+                http_parameters['headers'].pop('Authorization', None)
+
                 yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
                     messages=[AssistantMessage(content=reply)],
-                    extra={'http_response': stream_response},
+                    debug={'http_response': stream_response, 'http_request': http_parameters},
                     stream=stream,
                     finish_reason=stream.finish_reason,
                     usage=stream.usage,
@@ -263,24 +273,20 @@ class HttpChatModel(ChatCompletionModel[P], ABC):
                 yield ChatCompletionModelStreamOutput(
                     chat_model_id=self.model_id,
                     messages=[AssistantMessage(content=reply)],
-                    extra={'http_response': stream_response},
                     stream=stream,
                 )
 
         if not finish:
             raise UnexpectedResponseError(stream_response, 'Stream is not finished.')
 
-    async def _async_generate_data_from_sse_stream(self, messages: Messages, parameters: P) -> AsyncGenerator[str, None]:
-        async with httpx.AsyncClient(proxies=self.proxies) as client:
-            http_parameters = self._get_stream_request_parameters(messages, parameters)
-            http_parameters.update({'timeout': self.timeout})
-            async with aconnect_sse(client=client, method='POST', **http_parameters) as event_source:
-                async for sse in event_source.aiter_sse():
-                    yield sse.data
+    async def _async_generate_data_from_sse_stream(self, http_parameters: HttpxPostKwargs) -> AsyncGenerator[str, None]:
+        async with httpx.AsyncClient(proxies=self.proxies) as client, aconnect_sse(
+            client=client, method='POST', **http_parameters
+        ) as source:
+            async for sse in source.aiter_sse():
+                yield sse.data
 
-    async def _async_generate_data_from_basic_stream(self, messages: Messages, parameters: P) -> AsyncGenerator[str, None]:
-        http_parameters = self._get_stream_request_parameters(messages, parameters)
-        http_parameters.update({'timeout': self.timeout})
+    async def _async_generate_data_from_basic_stream(self, http_parameters: HttpxPostKwargs) -> AsyncGenerator[str, None]:
         async with httpx.AsyncClient(proxies=self.proxies) as client, client.stream('POST', **http_parameters) as source:
             async for line in source.aiter_lines():
                 yield line

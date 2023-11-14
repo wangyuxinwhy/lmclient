@@ -211,7 +211,7 @@ def parse_openai_model_reponse(response: HttpResponse) -> ChatCompletionModelOut
             finish_reason=response['choices'][0]['finish_reason'],
             usage=response['usage'],
             cost=calculate_cost(response['model'], response['usage']['prompt_tokens'], response['usage']['completion_tokens']),
-            extra=extra_info,
+            debug=extra_info,
         )
 
 

@@ -51,25 +51,38 @@ class ChatCompletionModel(Generic[P], ABC):
     def completion(self, prompt: Prompt, **override_parameters: Any) -> ChatCompletionModelOutput:
         parameters = self._merge_parameters(**override_parameters)
         messages = ensure_messages(prompt)
-        return self._completion(messages, parameters)
+        model_output = self._completion(messages, parameters)
+        model_output.debug['input_messages'] = messages
+        model_output.debug['parameters'] = parameters
+        return model_output
 
     async def async_completion(self, prompt: Prompt, **override_parameters: Any) -> ChatCompletionModelOutput:
         parameters = self._merge_parameters(**override_parameters)
         messages = ensure_messages(prompt)
-        return await self._async_completion(messages, parameters)
+        model_output = await self._async_completion(messages, parameters)
+        model_output.debug['input_messages'] = messages
+        model_output.debug['parameters'] = parameters
+        return model_output
 
     def stream_completion(self, prompt: Prompt, **override_parameters: Any) -> Iterator[ChatCompletionModelStreamOutput]:
         parameters = self._merge_parameters(**override_parameters)
         messages = ensure_messages(prompt)
-        yield from self._stream_completion(messages, parameters)
+        for stream_output in self._stream_completion(messages, parameters):
+            if stream_output.is_finish:
+                stream_output.debug['input_messages'] = messages
+                stream_output.debug['parameters'] = parameters
+            yield stream_output
 
     async def async_stream_completion(
         self, prompt: Prompt, **override_parameters: Any
     ) -> AsyncIterator[ChatCompletionModelStreamOutput]:
         parameters = self._merge_parameters(**override_parameters)
         messages = ensure_messages(prompt)
-        async for i in self._async_stream_completion(messages, parameters):
-            yield i
+        async for stream_output in self._async_stream_completion(messages, parameters):
+            if stream_output.is_finish:
+                stream_output.debug['input_messages'] = messages
+                stream_output.debug['parameters'] = parameters
+            yield stream_output
 
     def _merge_parameters(self, **override_parameters: Any) -> P:
         return self.parameters.__class__.model_validate(

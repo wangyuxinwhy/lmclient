@@ -151,7 +151,7 @@ class BailianChat(HttpChatModel[BailianChatParameters]):
         return ChatCompletionModelOutput(
             chat_model_id=self.model_id,
             messages=messages,
-            extra={
+            debug={
                 'thoughts': response['Data']['Thoughts'],
                 'doc_references': response['Data']['DocReferences'],
                 'request_id': response['RequestId'],

@@ -125,7 +125,7 @@ class MinimaxChat(HttpChatModel[MinimaxChatParameters]):
                 finish_reason=response['choices'][0]['finish_reason'],
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage']),
-                extra={
+                debug={
                     'logprobes': response['choices'][0]['logprobes'],
                     'input_sensitive': False,
                     'output_sensitive': False,
