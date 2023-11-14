@@ -8,9 +8,9 @@ from typing import Any, ClassVar, List, Literal, Optional
 from pydantic import Field
 from typing_extensions import NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -22,7 +22,7 @@ from lmclient.chat_completion.message import (
     UserMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import Probability
 
 
@@ -75,7 +75,7 @@ class BailianChat(HttpChatModel[BailianChatParameters]):
         agent_key: str | None = None,
         api: str | None = None,
         parameters: BailianChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         try:
             import broadscope_bailian
@@ -151,7 +151,7 @@ class BailianChat(HttpChatModel[BailianChatParameters]):
         return ChatCompletionModelOutput(
             chat_model_id=self.model_id,
             messages=messages,
-            debug={
+            extra={
                 'thoughts': response['Data']['Thoughts'],
                 'doc_references': response['Data']['DocReferences'],
                 'request_id': response['RequestId'],

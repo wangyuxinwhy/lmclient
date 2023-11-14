@@ -1,47 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Literal, Sequence, Type
+from typing import Type
 
 import pytest
-from pydantic import BaseModel
 
 from lmclient.chat_completion import (
     ChatCompletionModel,
     ChatCompletionModelStreamOutput,
     ChatModelRegistry,
     ChatModels,
-    load_from_model_id,
+    load_chat_model,
 )
-from lmclient.chat_completion.http import HttpChatModel
+from lmclient.chat_completion.http_chat import HttpChatModel
 from lmclient.chat_completion.message import Prompt
-
-param_type = Literal['model', 'model_cls', 'parameter', 'parameter_cls']
-
-
-def get_pytest_params(id_prefix: str, types: Sequence[param_type] | param_type, exclude: Sequence[str] | None = None) -> list:
-    exclude = exclude or []
-    if isinstance(types, str):
-        types = [types]
-
-    pytest_params: list = []
-    for model_name, (model_cls, paramter_cls) in ChatModelRegistry.items():
-        if model_name in exclude:
-            continue
-        values = []
-        for t in types:
-            if t == 'model':
-                values.append(model_cls(parameters=paramter_cls()))
-            elif t == 'model_cls':
-                values.append(model_cls)
-            elif t == 'parameter':
-                values.append(paramter_cls())
-            elif t == 'parameter_cls':
-                values.append(paramter_cls)
-            else:
-                raise ValueError(f'Unknown type {t}')
-        pytest_params.append(pytest.param(*values, id=f'{id_prefix}_{model_name}'))
-    return pytest_params
+from lmclient.parameters import ModelParameters
+from lmclient.test import get_pytest_params
 
 
 def test_model_type_is_unique() -> None:
@@ -49,12 +23,12 @@ def test_model_type_is_unique() -> None:
 
 
 def test_load_from_model_id() -> None:
-    model = load_from_model_id('openai/gpt-3.5-turbo')
+    model = load_chat_model('openai/gpt-3.5-turbo')
     assert model.model_type == 'openai'
     assert model.name == 'gpt-3.5-turbo'
 
 
-@pytest.mark.parametrize('chat_model', get_pytest_params('test_chat_completion', types='model'))
+@pytest.mark.parametrize('chat_model', get_pytest_params('test_chat_completion', ChatModelRegistry, types='model'))
 @pytest.mark.parametrize(
     'parameters',
     [
@@ -74,7 +48,9 @@ def test_http_chat_model(chat_model: HttpChatModel, parameters: dict) -> None:
     assert async_output.reply != ''
 
 
-@pytest.mark.parametrize('chat_model', get_pytest_params('test_stream_chat_completion', types='model', exclude=['azure']))
+@pytest.mark.parametrize(
+    'chat_model', get_pytest_params('test_stream_chat_completion', ChatModelRegistry, types='model', exclude=['azure'])
+)
 def test_http_stream_chat_model(chat_model: HttpChatModel) -> None:
     chat_model.timeout = 10
     prompt = '这是测试，只回复你好'
@@ -95,9 +71,13 @@ async def async_stream_helper(model: ChatCompletionModel, prompt: Prompt) -> Cha
 
 @pytest.mark.parametrize(
     ('model_cls', 'parameters'),
-    get_pytest_params('test_chat_parameters', types=('model_cls', 'parameter'), exclude=('zhipu-character', 'bailian')),
+    get_pytest_params(
+        'test_chat_parameters', ChatModelRegistry, types=('model_cls', 'parameter'), exclude=('zhipu-character', 'bailian')
+    ),
 )
-def test_init_chat_parameters(model_cls: Type[ChatCompletionModel], parameters: BaseModel, temperature: float = 0.8) -> None:
+def test_init_chat_parameters(
+    model_cls: Type[ChatCompletionModel], parameters: ModelParameters, temperature: float = 0.8
+) -> None:
     parameters.temperature = temperature
 
     model = model_cls(parameters=parameters)

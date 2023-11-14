@@ -18,7 +18,7 @@ import asyncer
 import tqdm
 from typing_extensions import Self, Unpack
 
-from lmclient.chat_completion import ChatCompletionModel, ChatCompletionModelOutput, ModelParameters, load_from_model_id
+from lmclient.chat_completion import ChatCompletionModel, ChatCompletionModelOutput, ModelParameters, load_chat_model
 from lmclient.chat_completion.message import Prompt, Prompts, ensure_messages
 
 P = TypeVar('P', bound=ModelParameters)
@@ -63,7 +63,7 @@ class CompletionEngine(Generic[P]):
 
     @classmethod
     def from_model_id(cls, model_id: str, **kwargs: Unpack[CompletionEngineKwargs]) -> Self:
-        chat_model = load_from_model_id(model_id)
+        chat_model = load_chat_model(model_id)
         return cls(chat_model, **kwargs)
 
     def run(self, prompts: Prompts, **kwargs: Any) -> Generator[ChatCompletionModelOutput, None, None]:

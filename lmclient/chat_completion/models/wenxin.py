@@ -8,9 +8,9 @@ import httpx
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -26,7 +26,7 @@ from lmclient.chat_completion.message import (
     UserMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import JsonSchema, Probability, Temperature
 
 
@@ -127,7 +127,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
         api_base: str | None = None,
         secret_key: str | None = None,
         parameters: WenxinChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or WenxinChatParameters()
         super().__init__(parameters=parameters, **kwargs)
@@ -224,7 +224,7 @@ class WenxinChat(HttpChatModel[WenxinChatParameters]):
             messages=messages,
             usage=response['usage'],
             cost=self.calculate_cost(response['usage']),
-            debug={
+            extra={
                 'is_truncated': response['is_truncated'],
                 'need_clear_history': response['need_clear_history'],
             },

@@ -6,9 +6,9 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Union, cast
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -18,16 +18,20 @@ from lmclient.chat_completion.message import (
     FunctionCall,
     FunctionCallMessage,
     FunctionMessage,
+    ImageUrlPart,
     Message,
     Messages,
     MessageTypeError,
+    MessageValueError,
+    TextPart,
     ToolCall,
     ToolCallsMessage,
     ToolMessage,
     UserMessage,
+    UserMultiPartMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
@@ -58,7 +62,7 @@ class OpenAIToolCall(TypedDict):
 
 class OpenAIMessage(TypedDict):
     role: str
-    content: Optional[str]
+    content: Union[str, None, List[Dict]]
     name: NotRequired[str]
     function_call: NotRequired[OpenAIFunctionCall]
     tool_call_id: NotRequired[str]
@@ -91,6 +95,29 @@ def convert_to_openai_message(message: Message) -> OpenAIMessage:
         return {
             'role': 'user',
             'content': message.content,
+        }
+
+    if isinstance(message, UserMultiPartMessage):
+        content = []
+        for part in message.content:
+            if isinstance(part, TextPart):
+                content.append({'type': 'text', 'text': part.text})
+            elif isinstance(part, ImageUrlPart):
+                image_url_part_dict = {
+                    'type': 'image_url',
+                    'image_url': {
+                        'url': part.image_url.url,
+                    },
+                }
+                if part.image_url.detail:
+                    image_url_part_dict['image_url']['detail'] = part.image_url.detail
+                content.append(image_url_part_dict)
+            else:
+                raise MessageValueError(message, f'OpenAI does not support {type(part)} ')
+
+        return {
+            'role': 'user',
+            'content': content,
         }
 
     if isinstance(message, AssistantMessage):
@@ -202,16 +229,21 @@ def parse_openai_model_reponse(response: HttpResponse) -> ChatCompletionModelOut
     except (KeyError, IndexError) as e:
         raise UnexpectedResponseError(response) from e
     else:
-        extra_info = {}
+        extra = {}
         if system_fingerprint := response.get('system_fingerprint'):
-            extra_info['system_fingerprint'] = system_fingerprint
+            extra['system_fingerprint'] = system_fingerprint
+
+        choice = response['choices'][0]
+        if (finish_reason := choice.get('finish_reason')) is None:
+            finish_reason = finish_details['type'] if (finish_details := choice.get('finish_details')) else None
+
         return ChatCompletionModelOutput(
             chat_model_id='openai/' + response['model'],
             messages=messages,
-            finish_reason=response['choices'][0]['finish_reason'],
+            finish_reason=finish_reason or '',
             usage=response['usage'],
             cost=calculate_cost(response['model'], response['usage']['prompt_tokens'], response['usage']['completion_tokens']),
-            debug=extra_info,
+            extra=extra,
         )
 
 
@@ -226,7 +258,7 @@ class OpenAIChat(HttpChatModel[OpenAIChatParameters]):
         api_base: str | None = None,
         system_prompt: str | None = None,
         parameters: OpenAIChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)

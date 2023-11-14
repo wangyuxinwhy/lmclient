@@ -6,9 +6,9 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional
 from pydantic import Field, PositiveInt, field_validator, model_validator
 from typing_extensions import Annotated, NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -25,7 +25,7 @@ from lmclient.chat_completion.message import (
     UserMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import FunctionJsonSchema, Probability, Temperature
 
 
@@ -165,7 +165,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
         system_prompt: str | None = None,
         default_user_name: str = '用户',
         parameters: MinimaxProChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or MinimaxProChatParameters()
         self.default_user_name = default_user_name
@@ -214,7 +214,7 @@ class MinimaxProChat(HttpChatModel[MinimaxProChatParameters]):
                 finish_reason=finish_reason,
                 usage=response['usage'],
                 cost=self.calculate_cost(response['usage'], num_web_search),
-                debug={
+                extra={
                     'input_sensitive': response['input_sensitive'],
                     'output_sensitive': response['output_sensitive'],
                 },

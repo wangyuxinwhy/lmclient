@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Type
 
-from pydantic import BaseModel
-
 from lmclient.chat_completion.base import ChatCompletionModel
-from lmclient.chat_completion.http import HttpChatModel, HttpChatModelInitKwargs
+from lmclient.chat_completion.http_chat import HttpChatModel, HttpModelInitKwargs
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, ChatCompletionModelStreamOutput
-from lmclient.chat_completion.model_parameters import ModelParameters
 from lmclient.chat_completion.models import (
     AzureChat,
     BaichuanChat,
@@ -29,8 +26,9 @@ from lmclient.chat_completion.models import (
     ZhipuChat,
     ZhipuChatParameters,
 )
+from lmclient.parameters import ModelParameters
 
-ChatModels: list[tuple[Type[ChatCompletionModel], Type[BaseModel]]] = [
+ChatModels: list[tuple[Type[ChatCompletionModel], Type[ModelParameters]]] = [
     (AzureChat, OpenAIChatParameters),
     (OpenAIChat, OpenAIChatParameters),
     (MinimaxProChat, MinimaxProChatParameters),
@@ -43,12 +41,12 @@ ChatModels: list[tuple[Type[ChatCompletionModel], Type[BaseModel]]] = [
     (BailianChat, BailianChatParameters),
 ]
 
-ChatModelRegistry: dict[str, tuple[Type[ChatCompletionModel], Type[BaseModel]]] = {
+ChatModelRegistry: dict[str, tuple[Type[ChatCompletionModel], Type[ModelParameters]]] = {
     model_cls.model_type: (model_cls, parameter_cls) for model_cls, parameter_cls in ChatModels
 }
 
 
-def load_from_model_id(model_id: str, **kwargs: Any) -> ChatCompletionModel:
+def load_chat_model(model_id: str, **kwargs: Any) -> ChatCompletionModel:
     if '/' not in model_id:
         model_type = model_id
         return ChatModelRegistry[model_type][0](**kwargs)  # type: ignore
@@ -67,7 +65,7 @@ __all__ = [
     'ChatCompletionModelStreamOutput',
     'ModelParameters',
     'HttpChatModel',
-    'HttpChatModelInitKwargs',
+    'HttpModelInitKwargs',
     'AzureChat',
     'MinimaxProChat',
     'MinimaxProChatParameters',

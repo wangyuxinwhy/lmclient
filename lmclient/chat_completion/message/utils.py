@@ -6,8 +6,9 @@ from lmclient.chat_completion.message.core import (
     Messages,
     Prompt,
     UserMessage,
-    content_validator,
+    assistant_content_validator,
     message_validator,
+    user_content_validator,
 )
 
 
@@ -28,7 +29,9 @@ def ensure_messages(prompt: Prompt) -> Messages:
         return [UserMessage(role='user', content=prompt)]
     if isinstance(prompt, dict):
         if prompt['role'] == 'assistant':
-            prompt['content_type'] = infer_content_type(prompt['content'])
+            prompt['content_type'] = infer_assistant_message_content_type(prompt['content'])
+        if prompt['role'] == 'user':
+            prompt['content_type'] = infer_user_message_content_type(prompt['content'])
         return [message_validator.validate_python(prompt)]
     if isinstance(prompt, Message):
         return [prompt]
@@ -39,17 +42,28 @@ def ensure_messages(prompt: Prompt) -> Messages:
             messages.append(i)
         else:
             if i['role'] == 'assistant':
-                i['content_type'] = infer_content_type(i['content'])
+                i['content_type'] = infer_assistant_message_content_type(i['content'])
+            if i['role'] == 'user':
+                i['content_type'] = infer_user_message_content_type(i['content'])
             messages.append(message_validator.validate_python(i))
     return messages
 
 
-def infer_content_type(message_content: Any) -> Literal['text', 'function_call', 'tool_calls']:
-    obj = content_validator.validate_python(message_content)
+def infer_assistant_message_content_type(message_content: Any) -> Literal['text', 'function_call', 'tool_calls']:
+    obj = assistant_content_validator.validate_python(message_content)
     if isinstance(obj, str):
         return 'text'
     if isinstance(obj, FunctionCall):
         return 'function_call'
     if isinstance(obj, list):
         return 'tool_calls'
+    raise ValueError(f'Unknown content type: {obj}')
+
+
+def infer_user_message_content_type(message_content: Any) -> Literal['text', 'multi_part']:
+    obj = user_content_validator.validate_python(message_content)
+    if isinstance(obj, str):
+        return 'text'
+    if isinstance(obj, list):
+        return 'multi_part'
     raise ValueError(f'Unknown content type: {obj}')

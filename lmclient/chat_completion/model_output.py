@@ -14,6 +14,7 @@ class ChatCompletionModelOutput(BaseModel):
     usage: Optional[Dict[str, int]] = None
     cost: Optional[float] = None
     debug: Dict[str, Any] = {}
+    extra: Dict[str, Any] = {}
 
     @property
     def last_message(self) -> Message | None:

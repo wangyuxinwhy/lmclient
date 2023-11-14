@@ -10,9 +10,9 @@ from typing import Any, ClassVar, Literal, Optional
 
 from typing_extensions import Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -25,7 +25,7 @@ from lmclient.chat_completion.message import (
     UserMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import Probability, Temperature
 
 
@@ -68,7 +68,7 @@ class HunyuanChat(HttpChatModel[HunyuanChatParameters]):
         api: str | None = None,
         sign_api: str | None = None,
         parameters: HunyuanChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or HunyuanChatParameters()
         super().__init__(parameters=parameters, **kwargs)

@@ -19,7 +19,32 @@ class SystemMessage(Message):
 
 class UserMessage(Message):
     role: Literal['user'] = 'user'
+    content_type: Literal['text'] = 'text'
     content: str
+
+
+class TextPart(BaseModel):
+    type: Literal['text'] = 'text'
+    text: str
+
+
+class ImageUrl(BaseModel):
+    url: str
+    detail: Optional[Literal['low', 'high', 'auto']] = None
+
+
+class ImageUrlPart(BaseModel):
+    type: Literal['image_url'] = 'image_url'
+    image_url: ImageUrl
+
+
+UserPartTypes = Annotated[Union[TextPart, ImageUrlPart], Field(discriminator='type')]
+
+
+class UserMultiPartMessage(Message):
+    role: Literal['user'] = 'user'
+    content_type: Literal['multi_part'] = 'multi_part'
+    content: List[UserPartTypes]
 
 
 class FunctionMessage(Message):
@@ -68,8 +93,9 @@ class ToolCallsMessage(Message):
 _AssistantMessage = Annotated[
     Union[AssistantMessage, FunctionCallMessage, ToolCallsMessage], Field(discriminator='content_type')
 ]
+_UserMessage = Annotated[Union[UserMessage, UserMultiPartMessage], Field(discriminator='content_type')]
 MessageTypes = Annotated[
-    Union[SystemMessage, UserMessage, FunctionMessage, ToolMessage, _AssistantMessage], Field(discriminator='role')
+    Union[SystemMessage, FunctionMessage, ToolMessage, _UserMessage, _AssistantMessage], Field(discriminator='role')
 ]
 Messages = Sequence[Message]
 MessageDict = Dict[str, Any]
@@ -77,5 +103,7 @@ MessageDicts = Sequence[MessageDict]
 Prompt = Union[str, Message, Messages, MessageDict, MessageDicts]
 Prompts = Sequence[Prompt]
 AssistantContentTypes = Union[str, FunctionCall, List[ToolCall]]
+UserContentTypes = Union[str, List[UserPartTypes]]
 message_validator = TypeAdapter(MessageTypes)
-content_validator = TypeAdapter(AssistantContentTypes)
+assistant_content_validator = TypeAdapter(AssistantContentTypes)
+user_content_validator = TypeAdapter(UserContentTypes)

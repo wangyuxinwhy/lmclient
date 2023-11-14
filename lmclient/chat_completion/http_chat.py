@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, ClassVar, Dict, Generator, Literal, Mapping, Optional, Sequence, TypeVar, Union
+from typing import AsyncGenerator, ClassVar, Generator, Literal, TypeVar
 
 import httpx
 from httpx._types import ProxiesTypes
 from httpx_sse import aconnect_sse, connect_sse
-from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-from typing_extensions import Required, TypedDict, override
+from typing_extensions import override
 
 from lmclient.chat_completion.base import ChatCompletionModel
 from lmclient.chat_completion.message import AssistantMessage, Messages
@@ -20,46 +18,11 @@ from lmclient.chat_completion.model_output import (
     FinishStream,
     Stream,
 )
-from lmclient.chat_completion.model_parameters import ModelParameters
-from lmclient.types import PrimitiveData
+from lmclient.http import HttpModelInitKwargs as HttpModelInitKwargs
+from lmclient.http import HttpResponse, HttpxPostKwargs, RetryStrategy, UnexpectedResponseError
+from lmclient.parameters import ModelParameters
 
 P = TypeVar('P', bound=ModelParameters)
-HttpResponse = Dict[str, Any]
-QueryParams = Mapping[str, Union[PrimitiveData, Sequence[PrimitiveData]]]
-Headers = Dict[str, str]
-logger = logging.getLogger(__name__)
-
-
-class RetryStrategy(BaseModel):
-    min_wait_seconds: int = 2
-    max_wait_seconds: int = 20
-    max_attempt: int = 3
-
-
-class HttpChatModelInitKwargs(TypedDict, total=False):
-    timeout: Optional[int]
-    retry: Union[bool, RetryStrategy]
-    proxies: Union[ProxiesTypes, None]
-
-
-class HttpxPostKwargs(TypedDict, total=False):
-    url: Required[str]
-    json: Required[Any]
-    headers: Required[Headers]
-    params: QueryParams
-    timeout: Optional[int]
-
-
-class UnexpectedResponseError(Exception):
-    """
-    Exception raised when an unexpected response is received from the server.
-
-    Attributes:
-        response (dict): The response from the server.
-    """
-
-    def __init__(self, response: dict, *args: Any) -> None:
-        super().__init__(response, *args)
 
 
 class HttpChatModel(ChatCompletionModel[P], ABC):

@@ -2,10 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from lmclient.function import function, get_json_schema
+from lmclient import ChatEngine, OpenAIChat, OpenAIChatParameters, function
+from lmclient.function import get_json_schema
 
 
-def get_weather(city: str, country: Literal['US', 'CN'] = 'US') -> str:
+def get_weather_without_wrap(city: str, country: Literal['US', 'CN'] = 'US') -> str:
     """
     Returns a string describing the weather in a given city and country.
 
@@ -16,7 +17,7 @@ def get_weather(city: str, country: Literal['US', 'CN'] = 'US') -> str:
     Returns:
         str: A string describing the weather in the given city and country.
     """
-    return f'The weather in {city}, {country} is 72 degrees and sunny'
+    return f'{country}/{city}，晴朗，27度'
 
 
 class UserInfo(BaseModel):
@@ -36,9 +37,9 @@ def upload_user_info(user_info: UserInfo) -> Literal['success']:
 
 
 def test_get_json_schema() -> None:
-    json_schema = get_json_schema(get_weather)
+    json_schema = get_json_schema(get_weather_without_wrap)
     expected_json_schema = {
-        'name': 'get_weather',
+        'name': 'get_weather_without_wrap',
         'description': 'Returns a string describing the weather in a given city and country.',
         'parameters': {
             'properties': {
@@ -60,3 +61,46 @@ def test_get_json_schema() -> None:
 def test_validate_function() -> None:
     output = upload_user_info(user_info={'name': 'John', 'age': 20})  # type: ignore
     assert output == 'success'
+
+
+@function
+def get_weather(loc: str) -> str:
+    """
+    获取指定地区的天气信息
+
+    Parameters:
+        loc: 地区，比如北京，上海等
+    """
+    return f'{loc}，晴朗，27度'
+
+
+@function
+def google(keyword: str) -> str:
+    """
+    搜索谷歌
+
+    Parameters:
+        keyword: 搜索关键词
+    """
+    return '没有内容'
+
+
+def test_openai_function() -> None:
+    model = OpenAIChat(parameters=OpenAIChatParameters(functions=[get_weather.json_schema, google.json_schema], temperature=0))
+    engine = ChatEngine(model, functions=[get_weather, google], stream=False, call_raise_error=True)
+    reply = engine.chat('今天北京天气怎么样？')
+    assert '27' in reply
+
+
+def test_openai_tool() -> None:
+    model = OpenAIChat(
+        parameters=OpenAIChatParameters(
+            tools=[
+                {'type': 'function', 'function': get_weather.json_schema},
+                {'type': 'function', 'function': google.json_schema},
+            ]
+        )
+    )
+    engine = ChatEngine(model, functions=[get_weather, google], stream=False, call_raise_error=True)
+    reply = engine.chat('今天北京天气怎么样？')
+    assert '27' in reply

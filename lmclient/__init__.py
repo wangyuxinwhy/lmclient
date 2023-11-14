@@ -18,7 +18,7 @@ from lmclient.chat_completion import (
     ZhipuCharacterChatParameters,
     ZhipuChat,
     ZhipuChatParameters,
-    load_from_model_id,
+    load_chat_model,
 )
 from lmclient.chat_engine import ChatEngine
 from lmclient.completion_engine import CompletionEngine
@@ -48,6 +48,6 @@ __all__ = [
     'BailianChat',
     'BailianChatParameters',
     'function',
-    'load_from_model_id',
+    'load_chat_model',
     '__version__',
 ]

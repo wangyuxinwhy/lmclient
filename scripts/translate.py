@@ -8,7 +8,7 @@ from anyio import open_file
 from asyncer import runnify
 
 from lmclient import CompletionEngine
-from lmclient.chat_completion import load_from_model_id
+from lmclient.chat_completion import load_chat_model
 from lmclient.completion_engine import ErrorMode
 
 
@@ -27,7 +27,7 @@ async def main(
     async_capacity: int = 3,
     error_mode: ErrorMode = 'raise',
 ) -> None:
-    model = load_from_model_id(model_id=model_id)
+    model = load_chat_model(model_id=model_id)
     client = CompletionEngine(
         model,  # type: ignore
         max_requests_per_minute=max_requests_per_minute,

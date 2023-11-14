@@ -8,9 +8,9 @@ import cachetools.func  # type: ignore
 import jwt
 from typing_extensions import NotRequired, Self, TypedDict, Unpack, override
 
-from lmclient.chat_completion.http import (
+from lmclient.chat_completion.http_chat import (
     HttpChatModel,
-    HttpChatModelInitKwargs,
+    HttpModelInitKwargs,
     HttpResponse,
     HttpxPostKwargs,
     UnexpectedResponseError,
@@ -23,7 +23,7 @@ from lmclient.chat_completion.message import (
     UserMessage,
 )
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, FinishStream, Stream
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 from lmclient.types import Probability, Temperature
 
 P = TypeVar('P', bound=ModelParameters)
@@ -111,7 +111,7 @@ class BaseZhipuChat(HttpChatModel[P]):
         parameters: P,
         api_key: str | None = None,
         api_base: str | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         super().__init__(parameters=parameters, **kwargs)
         self.model = model
@@ -189,7 +189,7 @@ class ZhipuChat(BaseZhipuChat[ZhipuChatParameters]):
         api_key: str | None = None,
         api_base: str | None = None,
         parameters: ZhipuChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or ZhipuChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)
@@ -204,7 +204,7 @@ class ZhipuCharacterChat(BaseZhipuChat[ZhipuCharacterChatParameters]):
         api_key: str | None = None,
         api_base: str | None = None,
         parameters: ZhipuCharacterChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or ZhipuCharacterChatParameters()
         super().__init__(model=model, api_key=api_key, api_base=api_base, parameters=parameters, **kwargs)

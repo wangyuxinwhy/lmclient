@@ -7,7 +7,7 @@ from typing_extensions import Self, TypeGuard
 
 from lmclient.chat_completion.message import Messages, Prompt, ensure_messages
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, ChatCompletionModelStreamOutput
-from lmclient.chat_completion.model_parameters import ModelParameters
+from lmclient.parameters import ModelParameters
 
 P = TypeVar('P', bound=ModelParameters)
 

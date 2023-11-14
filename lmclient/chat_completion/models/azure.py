@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 
 from typing_extensions import Self, Unpack, override
 
-from lmclient.chat_completion.http import HttpChatModel, HttpChatModelInitKwargs, HttpResponse, HttpxPostKwargs
+from lmclient.chat_completion.http_chat import HttpChatModel, HttpModelInitKwargs, HttpResponse, HttpxPostKwargs
 from lmclient.chat_completion.message import Messages
 from lmclient.chat_completion.model_output import ChatCompletionModelOutput, Stream
 from lmclient.chat_completion.models.openai import (
@@ -26,7 +26,7 @@ class AzureChat(HttpChatModel[OpenAIChatParameters]):
         api_base: str | None = None,
         api_version: str | None = None,
         parameters: OpenAIChatParameters | None = None,
-        **kwargs: Unpack[HttpChatModelInitKwargs],
+        **kwargs: Unpack[HttpModelInitKwargs],
     ) -> None:
         parameters = parameters or OpenAIChatParameters()
         super().__init__(parameters=parameters, **kwargs)
