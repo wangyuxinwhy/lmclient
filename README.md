@@ -1,5 +1,8 @@
 # lmclient
 
+> [!WARNING]
+> lmclient 已经处于非活跃开发状态，请使用 [generate](https://github.com/wangyuxinwhy/generate) 来替换~
+
 面向于大规模异步请求 OpenAI 接口设计的客户端，使用场景 self-instruct, 大规模翻译等
 
 ## Features
